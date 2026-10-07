@@ -1229,6 +1229,10 @@ int APIENTRY WinMain_impl(HINSTANCE hInstance,
 	// here damn_keys_filter class instanse will be destroyed
 #endif // DEDICATED_SERVER
 
+	// Everything is saved and the log is closed, so skip the runtime teardown: under Wine on macOS the PPL
+	// worker threads deadlock in FlushProcessWriteBuffers while the scheduler shuts down and the process never exits
+	TerminateProcess(GetCurrentProcess(), 0);
+
 	return 0;
 }
 
