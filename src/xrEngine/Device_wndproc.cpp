@@ -1,5 +1,8 @@
 #include "stdafx.h"
 #include "MonitorList.h"
+#include "IGame_Level.h"
+#include "IGame_Persistent.h"
+#include "XR_IOConsole.h"
 
 bool CRenderDevice::on_message(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam, LRESULT& result)
 {
@@ -52,8 +55,20 @@ bool CRenderDevice::on_message(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPara
 		}
 	case WM_CLOSE:
 		{
-			Engine.Event.Defer("KERNEL:disconnect");
-			Engine.Event.Defer("KERNEL:quit");								 
+			// While a level is running a close request comes from outside the game (the window manager,
+			// a system shortcut), so open the main menu instead of dropping the session without asking.
+			// A close request with the main menu already open quits as before.
+			IMainMenu* main_menu = g_pGamePersistent ? g_pGamePersistent->m_pMainMenu : NULL;
+			if (g_pGameLevel && main_menu && !main_menu->IsActive())
+			{
+				Msg("* Close request during the game, opening the main menu instead of quitting");
+				Console->Execute("main_menu on");
+			}
+			else
+			{
+				Engine.Event.Defer("KERNEL:disconnect");
+				Engine.Event.Defer("KERNEL:quit");
+			}
 #ifdef INGAME_EDITOR
         if (editor())
             break;
