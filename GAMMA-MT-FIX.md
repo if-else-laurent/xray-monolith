@@ -1,0 +1,120 @@
+# gamma-may-mt-cform-fix
+
+Notes on this branch: what it is built from, what it changes, how it is built
+and installed, and what is known but not fixed. The upstream README and its
+changelog are left untouched so that merges from upstream stay clean; anything
+specific to this branch goes here.
+
+## What the branch is
+
+The multithreaded (MT) engine source of 15 May 2026, the build that ships with
+G.A.M.M.A. 0.9.5 (merge `3d4dcca5` of `all-in-one-vs2022-wpo` into
+`all-in-one-vs2022-wpo-mt`), plus the fixes listed below. Only the DX11
+executable is built.
+
+| Remote | Repository | Role |
+|---|---|---|
+| `origin` | `themrdemonized/xray-monolith` | upstream, main branch `all-in-one-vs2022-wpo` |
+| `fork` | `if-else-laurent/xray-monolith` | where this branch is pushed and built |
+
+The engine is used on macOS through CrossOver (Wine with D3DMetal), which is
+where two of the three fixes come from.
+
+## Changes on top of the May 15 MT source
+
+### 1. CFORM arrays are published before the async tree build
+
+Commit `8639f35f`, files `src/xrCDB/xrCDB.cpp`, `xrCDB.h`, `xr_area.cpp`.
+
+`CObjectSpace::Load` had moved the whole CFORM build to a background task, so
+`GetStaticVerts()` and `GetStaticTris()` returned null until it finished, and
+callers that read the arrays without a preceding CDB query crashed. The build
+is split in two: `build_arrays` runs on the loading thread, only `build_tree`
+is queued. The commit message has the details, including the `status` field
+widened from a bool to a three-valued atomic.
+
+### 2. The process is terminated at the end of WinMain
+
+Commit `0913c773`, file `src/xrEngine/x_ray.cpp`.
+
+After a normal quit the process never exited under CrossOver. A sample of the
+hung process showed the main thread in an infinite `NtWaitForSingleObject` and
+all 16 PPL worker threads blocked inside Wine's `NtFlushProcessWriteBuffers`
+(in `thread_get_state`), at zero CPU. By then the level is unloaded,
+`user.ltx` is saved and the log is closed, so `WinMain` now ends with
+`TerminateProcess(GetCurrentProcess(), 0)` instead of running the runtime
+teardown. The call sits after the block that restores the sticky keys
+settings, launches the "on exit" application and releases the single instance
+mutex.
+
+Verified in game on 2026-10-07: the process exits at once.
+
+### 3. A close request during the game opens the main menu
+
+Commit `0f556b73`, file `src/xrEngine/Device_wndproc.cpp`.
+
+`WM_CLOSE` queued `KERNEL:disconnect` and `KERNEL:quit` unconditionally. Under
+CrossOver the game window received it when the game was minimized, and the
+session ended without asking; with fix 2 in place that looked like a crash
+with no error in the log. Now, while a level is loaded and the main menu is
+not open, `WM_CLOSE` opens the main menu and writes
+`* Close request during the game, opening the main menu instead of quitting`
+to the log. With the main menu open, or with no level loaded, it quits as
+before.
+
+Not verified in game yet. What sends the close request on minimize is not
+known; this only stops it from ending the session.
+
+## Known and not fixed
+
+- **PPL workers can deadlock under Wine on macOS.** Fix 2 avoids the deadlock
+  at shutdown only. The same mutual block of worker threads in
+  `NtFlushProcessWriteBuffers` is possible in the middle of a game, as a freeze
+  without a crash. It has not been observed so far. To check a frozen process:
+  `sample <pid> 2 -file out.txt` and look for the worker threads sitting in
+  `NtFlushProcessWriteBuffers`. The frames of the game code itself are not
+  readable in such a sample because of Rosetta.
+- **`alife():teleport_object` and objects without AI locations.** In
+  `CALifeGraphRegistry::add` the level registry is updated while the object
+  still carries its old game vertex, so an object teleported from another
+  level is not added to the current level until the save is loaded again.
+  Scripts work around it by calling `teleport_object` twice. Not changed here.
+
+## Building
+
+Workflow `.github/workflows/gamma-mt-fix.yml` ("GAMMA MT fix build"), based on
+the `build_mt` job of `msbuild.yml`. It runs on every push to this branch and
+can be started by hand. Every push starts a full build, a documentation-only
+one included.
+
+Artifacts, kept for 7 days:
+
+| Artifact | Content |
+|---|---|
+| `DX11_mt_exe` | `AnomalyDX11.exe` |
+| `DX11_mt_pdb` | `STALKER-Anomaly-modded-exes_DX11_mt_pdb.zip`, which holds `AnomalyDX11.pdb` |
+
+The project does not build on macOS.
+
+## Installing a build
+
+Game folder of this setup:
+`~/Library/Application Support/CrossOver/Bottles/Steam/drive_d/ANOMALY - GAMMA/ANOMALY/bin`.
+
+1. Close the game.
+2. Keep the current files next to the new ones as
+   `AnomalyDX11.exe.bak-<date>` and `AnomalyDX11.pdb.bak-<date>`.
+3. Put `AnomalyDX11.exe` from `DX11_mt_exe` and `AnomalyDX11.pdb` from the
+   inner archive of `DX11_mt_pdb` into the folder. The pdb is read only when
+   the game crashes, but a stale one makes the stack in the log wrong.
+
+Installed builds so far:
+
+| Date | Commit | Notes |
+|---|---|---|
+| 2026-10-05 | `6f9b2413` | first build of the branch, exe md5 `6bec99a5…` |
+| 2026-10-07 | `0913c773` | exit fix, exe md5 `5a2edd8c…` |
+
+The game log starts with the build date of the executable
+(`'xrCore' build …`, `Modded Exes MT-TEST version …`), which tells which
+build a log comes from.
