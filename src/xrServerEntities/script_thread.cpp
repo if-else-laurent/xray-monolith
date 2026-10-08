@@ -45,7 +45,8 @@ CScriptThread::CScriptThread(LPCSTR caNamespaceName, bool do_string, bool reload
 
 	try
 	{
-		string256 S;
+		// A console string comes here wrapped into a function; 256 bytes cut a long one short
+		string4096 S;
 		if (!do_string)
 		{
 			m_script_name = caNamespaceName;

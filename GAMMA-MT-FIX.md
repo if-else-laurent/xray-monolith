@@ -102,6 +102,20 @@ carries the real context.
 Not built and not verified: written on macOS, where the project does not
 build. It has to pass the workflow build first.
 
+### 5. `run_string` keeps the case of its argument and takes a long string
+
+`src/xrGame/console_commands.cpp`, `src/xrServerEntities/script_thread.cpp`
+
+The console lowercased the argument of every command, `run_string` included,
+so `run_string printf(SIMBOARD ~= nil)` ran as `printf(simboard ~= nil)`:
+any Lua name with a capital letter was out of reach. `CCC_ScriptCommand` now
+sets `bLowerCaseArgs = false`. The string is wrapped into a function in a
+buffer that was 256 bytes; it is 4096 now.
+
+Not changed: strings queued in the same frame (typed while the game is
+paused) all define the same wrapper function before any of them runs, so the
+last one runs once for each. Enter them one at a time in a running game.
+
 ## Known and not fixed
 
 - **PPL workers can deadlock under Wine on macOS.** Fix 2 avoids the deadlock

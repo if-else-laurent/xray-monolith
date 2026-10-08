@@ -1840,7 +1840,8 @@ public:
 class CCC_ScriptCommand : public IConsole_Command
 {
 public:
-	CCC_ScriptCommand(LPCSTR N) : IConsole_Command(N) { bEmptyArgsHandled = false; };
+	// Lua is case sensitive: the console must not lowercase the string it is given to run
+	CCC_ScriptCommand(LPCSTR N) : IConsole_Command(N) { bEmptyArgsHandled = false; bLowerCaseArgs = false; };
 
 	virtual void Execute(LPCSTR args)
 	{
