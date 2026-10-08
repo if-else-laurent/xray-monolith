@@ -65,6 +65,43 @@ before.
 Not verified in game yet. What sends the close request on minimize is not
 known; this only stops it from ending the session.
 
+### 4. A crash is reported before anything that can hang, and a hung report ends the process
+
+File `src/xrCore/xrDebugNew.cpp`.
+
+On 2026-10-08 the game froze for good in the middle of a session. The log
+ended with `stack trace:`, the two StackWalker lines `SymInit:` and
+`OS-Version:`, and nothing else: an unhandled exception had reached
+`UnhandledFilter`, which started the stack walk first, and the walk never
+returned from dbghelp. No address, no stack and no minidump were written,
+because all of that came after the walk. Earlier crashes on 4 and 5 October did
+get their minidumps, so the walk does not hang every time.
+
+Three changes:
+
+- `log_exception_record` runs first and uses no dbghelp. It writes the
+  exception code, the address, the module with its base and the offset inside
+  it, and for an access violation whether it was a read or a write and of what
+  address:
+  `! Unhandled exception 0xC0000005 at address 0x..., thread ...`,
+  `! Module ...\AnomalyDX11.exe, base 0x..., offset 0x...`,
+  `! Access violation reading address 0x...`.
+  The offset is what to look up in `AnomalyDX11.pdb` if nothing else survives.
+- The minidump is written before the stack walk instead of after it.
+- A watchdog thread (`crash_report_begin` / `crash_report_end`) covers the
+  minidump and the walk. If they are not done in 60 seconds it writes
+  `! Crash report did not finish in 60 seconds, terminating the process` and
+  calls `TerminateProcess`, so a hung report ends as a closed game and not as a
+  dead window. The same watchdog covers the stack walk of a `FATAL ERROR`
+  (`xrDebug::gather_info`), which goes through the same code.
+
+The stack that `LogStackTrace` prints is that of the handler itself, not of
+the faulting code, as before; this change does not touch that. The minidump
+carries the real context.
+
+Not built and not verified: written on macOS, where the project does not
+build. It has to pass the workflow build first.
+
 ## Known and not fixed
 
 - **PPL workers can deadlock under Wine on macOS.** Fix 2 avoids the deadlock

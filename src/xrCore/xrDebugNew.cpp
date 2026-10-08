@@ -124,6 +124,47 @@ void LogStackTrace(LPCSTR header = nullptr, bool printStack = false)
     }
 }
 
+// Writing a crash report goes through dbghelp (the stack walk and the minidump),
+// and under Wine that can block forever: the game then sits there as a dead
+// window with no error instead of crashing. A watchdog thread ends the process
+// if the report is not finished in time. What matters most, the exception
+// address, is logged before any of this starts.
+static const DWORD crash_report_timeout_ms = 60000;
+static volatile LONG crash_report_generation = 0;
+
+static DWORD WINAPI crash_report_watchdog(LPVOID parameter)
+{
+	const LONG generation = (LONG)(LONG_PTR)parameter;
+	for (DWORD waited = 0; waited < crash_report_timeout_ms; waited += 100)
+	{
+		Sleep(100);
+		// The report this thread was started for is done
+		if (InterlockedCompareExchange(&crash_report_generation, 0, 0) != generation)
+			return 0;
+	}
+
+	if (shared_str_initialized)
+		Msg("! Crash report did not finish in %u seconds, terminating the process",
+		    (unsigned int)(crash_report_timeout_ms / 1000));
+	xrLogger::FlushLog();
+	TerminateProcess(GetCurrentProcess(), 1);
+	return 0;
+}
+
+// Call before the part of a crash report that may hang; pass the result to crash_report_end
+static HANDLE crash_report_begin()
+{
+	const LONG generation = InterlockedIncrement(&crash_report_generation);
+	return CreateThread(NULL, 0, crash_report_watchdog, (LPVOID)(LONG_PTR)generation, 0, NULL);
+}
+
+static void crash_report_end(HANDLE watchdog)
+{
+	InterlockedIncrement(&crash_report_generation);
+	if (watchdog)
+		CloseHandle(watchdog);
+}
+
 void xrDebug::gather_info(const char* expression, const char* description, const char* argument0, const char* argument1,
                           const char* file, int line, const char* function, LPSTR assertion_info,
                           u32 const assertion_info_size)
@@ -211,7 +252,9 @@ void xrDebug::gather_info(const char* expression, const char* description, const
 		if (shared_str_initialized)
 			Msg("stack trace:\n");
 
+		HANDLE watchdog = crash_report_begin();
         LogStackTrace(nullptr, true);
+		crash_report_end(watchdog);
 
 #ifdef USE_OWN_ERROR_MESSAGE_WINDOW
 		buffer += xr_sprintf(buffer, assertion_size - u32(buffer - buffer_base), "stack trace:%s%s", endline, endline);
@@ -799,12 +842,58 @@ void format_message(LPSTR buffer, const u32& buffer_size)
 #endif //-!_EDITOR
 
 #ifdef NO_BUG_TRAP
+// What failed and where, without dbghelp: the exception code, its address and
+// the module with the offset inside it, which is enough to find the function
+// in the pdb afterwards even if nothing else gets written.
+static void log_exception_record(_EXCEPTION_POINTERS* pExceptionInfo)
+{
+	if (!shared_str_initialized || !pExceptionInfo || !pExceptionInfo->ExceptionRecord)
+		return;
+
+	const EXCEPTION_RECORD* record = pExceptionInfo->ExceptionRecord;
+	void* address = record->ExceptionAddress;
+	Msg("! Unhandled exception 0x%08X at address 0x%p, thread %u", (unsigned int)record->ExceptionCode, address,
+	    (unsigned int)GetCurrentThreadId());
+
+	HMODULE module = NULL;
+	string_path module_name;
+	if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+	                       (LPCSTR)address, &module) && module
+		&& GetModuleFileNameA(module, module_name, sizeof(module_name)))
+	{
+		Msg("! Module %s, base 0x%p, offset 0x%p", module_name, (void*)module,
+		    (void*)((const char*)address - (const char*)module));
+	}
+
+	if ((record->ExceptionCode == EXCEPTION_ACCESS_VIOLATION || record->ExceptionCode == EXCEPTION_IN_PAGE_ERROR)
+		&& record->NumberParameters >= 2)
+	{
+		const ULONG_PTR operation = record->ExceptionInformation[0];
+		Msg("! Access violation %s address 0x%p",
+		    operation == 0 ? "reading" : (operation == 1 ? "writing" : "executing"),
+		    (void*)record->ExceptionInformation[1]);
+	}
+
+	xrLogger::FlushLog();
+}
+
 //AVO: simplify function
 LONG WINAPI UnhandledFilter(_EXCEPTION_POINTERS* pExceptionInfo)
 {
     xrLogger::SetImmediateMode(true);
 	string256 error_message;
 	format_message(error_message, sizeof(error_message));
+
+	// First the part that cannot hang
+	log_exception_record(pExceptionInfo);
+
+	HANDLE watchdog = crash_report_begin();
+
+	// The minidump goes before the stack walk: it is the more useful of the two
+	// and the walk is the one seen to hang
+# ifdef USE_OWN_MINI_DUMP
+	save_mini_dump(pExceptionInfo);
+# endif // USE_OWN_MINI_DUMP
 
 	CONTEXT save = *pExceptionInfo->ContextRecord;
 	//    BuildStackTrace(pExceptionInfo);
@@ -814,6 +903,8 @@ LONG WINAPI UnhandledFilter(_EXCEPTION_POINTERS* pExceptionInfo)
 		Msg("stack trace:\n");
 
     LogStackTrace(nullptr, true);
+
+	crash_report_end(watchdog);
 
 	if (!IsDebuggerPresent())
 	{
@@ -851,10 +942,6 @@ LONG WINAPI UnhandledFilter(_EXCEPTION_POINTERS* pExceptionInfo)
 	//return EXCEPTION_CONTINUE_EXECUTION;
 
     xrLogger::FlushLog();
-
-# ifdef USE_OWN_MINI_DUMP
-	save_mini_dump(pExceptionInfo);
-# endif // USE_OWN_MINI_DUMP
 
     if (IsDebuggerPresent())
         DebugBreak();
