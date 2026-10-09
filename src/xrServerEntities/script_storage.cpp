@@ -334,6 +334,192 @@ void disable_os_funcs(lua_State* L)
 	lua_pop(L, 1);
 }
 
+// ---------------------------------------------------------------------------
+// Script sandbox
+//
+// A script of the game or of a mod is not a program the player has chosen to
+// trust with his computer, yet the io library gave it every file the player
+// can reach, and under Wine that is the whole disk of the host, not the
+// bottle. The scripts are confined to the game:
+//   - they read under $fs_root$ only;
+//   - they write under $app_data_root$ and $game_data$ only, so that they
+//     cannot replace the executables, the libraries or commandline.txt and
+//     come back unconfined at the next start;
+//   - ffi, package.loadlib and the loaders of C modules are taken away:
+//     each of them runs native code, which no rule about paths can hold.
+// The rule is asked by io.open, io.lines, io.input, io.output, loadfile,
+// dofile and require (in LuaJIT), by lfs, and by the file functions and the
+// ini files the engine gives to scripts.
+//
+// Known gaps: bytecode is still loaded (saves keep functions as bytecode,
+// lmarshal.c), and a crafted chunk can break LuaJIT; console commands that
+// take a file name are not checked.
+//
+// Command line: -lua_sandbox_audit lets everything through and writes to the
+// log what would have been refused; -lua_sandbox_off switches it off. The
+// command line is read from a place scripts cannot write to.
+// ---------------------------------------------------------------------------
+#include "script_sandbox.h"
+
+namespace
+{
+	enum { sandbox_unset = -1, sandbox_off, sandbox_audit, sandbox_enforce };
+
+	int sandbox_mode = sandbox_unset;
+	string_path sandbox_root, sandbox_appdata, sandbox_gamedata;
+	// The log must not be drowned by a script that tries the same thing every frame.
+	u32 sandbox_reports = 0;
+	const u32 sandbox_reports_max = 200;
+
+	// Absolute, without "..", lower case: the form in which paths are compared.
+	void sandbox_full(LPCSTR path, string_path& out)
+	{
+		if (!GetFullPathNameA(path, sizeof(out), out, nullptr))
+			out[0] = 0;
+		strlwr(out);
+	}
+
+	void sandbox_root_of(LPCSTR alias, string_path& out)
+	{
+		string_path raw;
+		FS.update_path(raw, alias, "");
+		sandbox_full(raw, out);
+		size_t length = xr_strlen(out);
+		if (length && out[length - 1] == '\\')
+			out[length - 1] = 0;
+	}
+
+	// root is kept without the closing slash: the folder itself is under it too.
+	bool sandbox_under(LPCSTR full, LPCSTR root)
+	{
+		size_t length = xr_strlen(root);
+		return length > 0 && 0 == strncmp(full, root, length) && (full[length] == 0 || full[length] == '\\');
+	}
+
+	void sandbox_init()
+	{
+		if (strstr(Core.Params, "-lua_sandbox_off"))
+			sandbox_mode = sandbox_off;
+		else if (strstr(Core.Params, "-lua_sandbox_audit"))
+			sandbox_mode = sandbox_audit;
+		else
+			sandbox_mode = sandbox_enforce;
+		sandbox_root_of("$fs_root$", sandbox_root);
+		sandbox_root_of("$app_data_root$", sandbox_appdata);
+		sandbox_root_of("$game_data$", sandbox_gamedata);
+		Msg("* Script sandbox: %s. Scripts read under %s and write under %s and %s",
+		    sandbox_mode == sandbox_off ? "off" : sandbox_mode == sandbox_audit ? "watching only" : "on",
+		    sandbox_root, sandbox_appdata, sandbox_gamedata);
+	}
+
+	int sandbox_lua_guard(const char* path, int what)
+	{
+		return script_path_allowed(path, what) ? 1 : 0;
+	}
+
+	int sandbox_ffi_watched(lua_State* L)
+	{
+		Msg("! [script sandbox] a script asks for ffi: let through, the sandbox only watches");
+		return luaopen_ffi(L);
+	}
+}
+
+bool script_path_allowed(const char* path, int what)
+{
+	if (sandbox_mode == sandbox_unset)
+		sandbox_init();
+	// Bytecode: see the known gaps above.
+	if (sandbox_mode == sandbox_off || what == LUAL_GUARD_BYTECODE || !path || !path[0])
+		return true;
+
+	string_path full;
+	sandbox_full(path, full);
+	bool allowed = what == LUAL_GUARD_WRITE
+		               ? sandbox_under(full, sandbox_appdata) || sandbox_under(full, sandbox_gamedata)
+		               : sandbox_under(full, sandbox_root);
+	if (allowed)
+		return true;
+
+	if (sandbox_reports < sandbox_reports_max)
+	{
+		++sandbox_reports;
+		Msg("! [script sandbox] a script %s outside the game's folders, %s: %s",
+		    what == LUAL_GUARD_WRITE ? "writes" : "reads",
+		    sandbox_mode == sandbox_audit ? "let through, the sandbox only watches" : "refused", full);
+	}
+	return sandbox_mode == sandbox_audit;
+}
+
+bool script_path_allowed(const char* initial, const char* name, int what)
+{
+	string_path full;
+	FS.update_path(full, initial, name ? name : "");
+	return script_path_allowed(full, what);
+}
+
+void script_sandbox_install()
+{
+	if (sandbox_mode == sandbox_unset)
+		sandbox_init();
+	luaL_setpathguard(&sandbox_lua_guard);
+}
+
+// Takes from a Lua machine what runs native code.
+static void restrict_script_libs(lua_State* L)
+{
+	script_sandbox_install();
+	if (sandbox_mode == sandbox_off)
+		return;
+
+	lua_getglobal(L, "package");
+	if (lua_istable(L, -1))
+	{
+		lua_getfield(L, -1, "preload");
+		if (lua_istable(L, -1))
+		{
+			if (sandbox_mode == sandbox_audit)
+				lua_pushcfunction(L, sandbox_ffi_watched);
+			else
+				lua_pushnil(L);
+			lua_setfield(L, -2, "ffi");
+		}
+		lua_pop(L, 1);
+
+		if (sandbox_mode == sandbox_enforce)
+		{
+			lua_getfield(L, -1, "loaded");
+			if (lua_istable(L, -1))
+			{
+				lua_pushnil(L);
+				lua_setfield(L, -2, "ffi");
+			}
+			lua_pop(L, 1);
+
+			lua_pushnil(L);
+			lua_setfield(L, -2, "loadlib");
+			lua_pushstring(L, "");
+			lua_setfield(L, -2, "cpath");
+			// package.loaders: 1 preload, 2 Lua files, 3 C libraries, 4 all-in-one C libraries.
+			lua_getfield(L, -1, "loaders");
+			if (lua_istable(L, -1))
+			{
+				lua_pushnil(L);
+				lua_rawseti(L, -2, 4);
+				lua_pushnil(L);
+				lua_rawseti(L, -2, 3);
+			}
+			lua_pop(L, 1);
+		}
+	}
+	lua_pop(L, 1);
+
+	if (sandbox_mode == sandbox_enforce)
+	{
+		lua_pushnil(L);
+		lua_setglobal(L, "ffi");
+	}
+}
+
 bool LoadKernelScriptToGlobal(lua_State* L, const char* name)
 {
 	string_path FileName;
@@ -445,6 +631,7 @@ void CScriptStorage::reinit()
 	bool isDebugEnabled = lua_debug;
 	luaopen_lua_extensions(lua(), isDebugEnabled);
 	disable_os_funcs(lua());
+	restrict_script_libs(lua());
 
 	if (isDebugEnabled)
 	{

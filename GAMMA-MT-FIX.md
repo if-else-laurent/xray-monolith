@@ -131,6 +131,53 @@ last one runs once for each. Enter them one at a time in a running game.
   level is not added to the current level until the save is loaded again.
   Scripts work around it by calling `teleport_object` twice. Not changed here.
 
+### 6. Script sandbox
+
+Files `src/xrServerEntities/script_storage.cpp`, `script_sandbox.h`,
+`script_ini_file.cpp`, `src/xrGame/fs_registrator_script.cpp`,
+`src/Layers/xrRenderDX10/dx10ResourceManager_Scripting.cpp`, LuaJIT
+(`lauxlib.h`, `lib_aux.c`, `lib_io.c`, `lj_load.c`) and `lfs.c`.
+
+A script of the game or of a mod had every file the player can reach: `io` is
+open, and under Wine the bottle maps the whole disk of the host (`Z:` is `/`).
+The modpack runs the scripts of some six hundred mods. Scripts are now
+confined to the game:
+
+- they read under `$fs_root$` only;
+- they write under `$app_data_root$` and `$game_data$` only, so that they
+  cannot replace the executables, the libraries or `commandline.txt` and come
+  back unconfined at the next start;
+- `ffi`, `package.loadlib` and the loaders of C modules are taken away: each
+  runs native code, which no rule about paths can hold.
+
+The rule is one function, `script_path_allowed`. LuaJIT asks it through a
+guard (`luaL_setpathguard`) in `io.open`, `io.lines`, `io.input`, `io.output`,
+`loadfile`, `dofile` and `require`; `lfs` asks the same guard; the engine asks
+it in the file functions of `getFS()` given to scripts (`r_open`, `w_open`,
+`file_delete`, `dir_delete`, `file_rename`, `file_copy`) and in `ini_file`
+(a refused file reads as empty, `save_as` returns false). A refused `io.open`
+returns `nil, "<path>: Permission denied"`, as for any file that cannot be
+opened. Paths are compared absolute, without `..`, in lower case.
+
+Command line (read from `commandline.txt`, which scripts cannot write):
+`-lua_sandbox_audit` lets everything through and logs what would have been
+refused, `-lua_sandbox_off` switches the sandbox off. The log has one line at
+start, `* Script sandbox: ...`, and a line `! [script sandbox] ...` for each
+of the first 200 refusals.
+
+Known gaps:
+
+- Bytecode is still loaded. Saves keep functions as bytecode (`lmarshal.c`),
+  so it cannot simply be refused, and a crafted chunk can break out of LuaJIT.
+  This needs an exploit written for this LuaJIT, not one line of Lua.
+- Console commands that take a file name (`cfg_save`, `cfg_load`) are not
+  checked; scripts can run console commands.
+- `getFS():append_path` can still move a root alias.
+- With `lua_debug 1` the sockets are opened for the debugger; a script can
+  then talk to the network, though only about what it can read.
+
+Not verified in game yet.
+
 ## Building
 
 Workflow `.github/workflows/gamma-mt-fix.yml` ("GAMMA MT fix build"), based on

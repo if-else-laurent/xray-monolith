@@ -38,6 +38,12 @@ static TValue *cpparser(lua_State *L, lua_CFunction dummy, void *ud)
     setstrV(L, L->top++, lj_err_str(L, LJ_ERR_XMODE));
     lj_err_throw(L, LUA_ERRSYNTAX);
   }
+  /* X-Ray: bytecode is not verified and a crafted chunk breaks out of the
+  ** VM, so a confined script may load source only. */
+  if (bc && !luaL_pathallowed(ls->chunkarg, LUAL_GUARD_BYTECODE)) {
+    setstrV(L, L->top++, lj_err_str(L, LJ_ERR_XMODE));
+    lj_err_throw(L, LUA_ERRSYNTAX);
+  }
   pt = bc ? lj_bcread(ls) : lj_parse(ls);
   fn = lj_func_newL_empty(L, pt, tabref(L->env));
   /* Don't combine above/below into one statement. */
@@ -88,7 +94,13 @@ LUALIB_API int luaL_loadfilex(lua_State *L, const char *filename,
   int status;
   const char *chunkname;
   if (filename) {
-    ctx.fp = fopen(filename, "rb");
+    /* X-Ray: loadfile, dofile and require open files too. */
+    if (!luaL_pathallowed(filename, LUAL_GUARD_READ)) {
+      errno = EACCES;
+      ctx.fp = NULL;
+    } else {
+      ctx.fp = fopen(filename, "rb");
+    }
     if (ctx.fp == NULL) {
       lua_pushfstring(L, "cannot open %s: %s", filename, strerror(errno));
       return LUA_ERRFILE;

@@ -11,6 +11,18 @@
 #include "script_engine.h"
 #include "ai_space.h"
 #include "object_factory.h"
+#include "script_sandbox.h"
+
+// Script sandbox: an ini file outside the game's folders is not opened. The
+// script gets an empty one instead, under a name where nothing is kept.
+static LPCSTR sandbox_ini_path(LPCSTR full, BOOL read_only)
+{
+	if (script_path_allowed(full, read_only ? 0 : 1))
+		return full;
+	string_path refused;
+	FS.update_path(refused, "$app_data_root$", "script_sandbox_refused.ltx");
+	return (*shared_str(refused));
+}
 
 CScriptIniFile::CScriptIniFile(IReader* F, LPCSTR path) :
 	inherited(F, path)
@@ -18,7 +30,7 @@ CScriptIniFile::CScriptIniFile(IReader* F, LPCSTR path) :
 }
 
 CScriptIniFile::CScriptIniFile(LPCSTR szFileName, BOOL ReadOnly, BOOL bLoadAtStart, BOOL SaveAtEnd, LPCSTR path) :
-	inherited(path ? path : update(szFileName), ReadOnly, bLoadAtStart, SaveAtEnd)
+	inherited(sandbox_ini_path(path ? path : update(szFileName), ReadOnly), ReadOnly, bLoadAtStart, SaveAtEnd)
 {
 }
 
@@ -221,6 +233,8 @@ void CScriptIniFile::w_u8(LPCSTR S, LPCSTR L, u8 V, LPCSTR comment)
 bool CScriptIniFile::save_as(LPCSTR new_fname)
 {
 	THROW2(new_fname, "File name is null");
+	if (!script_path_allowed(new_fname, 1))
+		return false;
 	return (inherited::save_as(new_fname));
 }
 

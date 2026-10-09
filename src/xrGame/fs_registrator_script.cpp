@@ -1,6 +1,7 @@
 #include "pch_script.h"
 #include "fs_registrator.h"
 #include "../xrcore/LocatorApi.h"
+#include "../xrServerEntities/script_sandbox.h"
 
 using namespace luabind;
 
@@ -176,14 +177,59 @@ FS_file_list file_list_open_script_2(CLocatorAPI* fs, LPCSTR initial, LPCSTR fol
 	return FS_file_list(fs->file_list_open(initial, folder, flags));
 }
 
+// Script sandbox: what changes or opens a file asks first, see script_sandbox.h.
+// A refused call does nothing (and returns nothing, where it returns a file).
+enum { sandbox_read = 0, sandbox_write = 1 };
+
 void dir_delete_script_2(CLocatorAPI* fs, LPCSTR path, LPCSTR nm, int remove_files)
 {
-	fs->dir_delete(path, nm, remove_files);
+	if (script_path_allowed(path, nm, sandbox_write))
+		fs->dir_delete(path, nm, remove_files);
 }
 
 void dir_delete_script(CLocatorAPI* fs, LPCSTR full_path, int remove_files)
 {
-	fs->dir_delete(full_path, remove_files);
+	if (script_path_allowed(full_path, sandbox_write))
+		fs->dir_delete(full_path, remove_files);
+}
+
+void file_delete_script_2(CLocatorAPI* fs, LPCSTR path, LPCSTR nm)
+{
+	if (script_path_allowed(path, nm, sandbox_write))
+		fs->file_delete(path, nm);
+}
+
+void file_delete_script(CLocatorAPI* fs, LPCSTR full_path)
+{
+	if (script_path_allowed(full_path, sandbox_write))
+		fs->file_delete(full_path);
+}
+
+void file_rename_script(CLocatorAPI* fs, LPCSTR src, LPCSTR dest, bool overwrite)
+{
+	if (script_path_allowed(src, sandbox_write) && script_path_allowed(dest, sandbox_write))
+		fs->file_rename(src, dest, overwrite);
+}
+
+void file_copy_script(CLocatorAPI* fs, LPCSTR src, LPCSTR dest)
+{
+	if (script_path_allowed(src, sandbox_read) && script_path_allowed(dest, sandbox_write))
+		fs->file_copy(src, dest);
+}
+
+IReader* r_open_script_2(CLocatorAPI* fs, LPCSTR initial, LPCSTR nm)
+{
+	return script_path_allowed(initial, nm, sandbox_read) ? fs->r_open(initial, nm) : nullptr;
+}
+
+IReader* r_open_script(CLocatorAPI* fs, LPCSTR full_path)
+{
+	return script_path_allowed(full_path, sandbox_read) ? fs->r_open(full_path) : nullptr;
+}
+
+IWriter* w_open_script_2(CLocatorAPI* fs, LPCSTR initial, LPCSTR nm)
+{
+	return script_path_allowed(initial, nm, sandbox_write) ? fs->w_open(initial, nm) : nullptr;
 }
 
 LPCSTR get_file_age_str(CLocatorAPI* fs, LPCSTR nm)
@@ -259,26 +305,26 @@ void fs_registrator::script_register(lua_State* L)
 
 		.def("rescan_pathes", &rescan_pathes_script)
 
-		.def("file_delete", (void (CLocatorAPI::*)(LPCSTR, LPCSTR))(&CLocatorAPI::file_delete))
-		.def("file_delete", (void (CLocatorAPI::*)(LPCSTR))(&CLocatorAPI::file_delete))
+		.def("file_delete", &file_delete_script_2)
+		.def("file_delete", &file_delete_script)
 
 		.def("dir_delete", &dir_delete_script)
 		.def("dir_delete", &dir_delete_script_2)
 
-		.def("file_rename", &CLocatorAPI::file_rename)
+		.def("file_rename", &file_rename_script)
 		.def("file_length", &CLocatorAPI::file_length)
-		.def("file_copy", &CLocatorAPI::file_copy)
+		.def("file_copy", &file_copy_script)
 
 		.def("exist", (const CLocatorAPI::file* (CLocatorAPI::*)(LPCSTR))(&CLocatorAPI::exist))
 		.def("exist", (const CLocatorAPI::file* (CLocatorAPI::*)(LPCSTR, LPCSTR))(&CLocatorAPI::exist))
 
 		.def("get_file_age", &CLocatorAPI::get_file_age)
 		.def("get_file_age_str", &get_file_age_str)
-		.def("r_open", (IReader* (CLocatorAPI::*)(LPCSTR, LPCSTR))(&CLocatorAPI::r_open))
-		.def("r_open", (IReader* (CLocatorAPI::*)(LPCSTR))(&CLocatorAPI::r_open))
+		.def("r_open", &r_open_script_2)
+		.def("r_open", &r_open_script)
 		.def("r_close", (void (CLocatorAPI::*)(IReader*&))(&CLocatorAPI::r_close))
 
-		.def("w_open", (IWriter* (CLocatorAPI::*)(LPCSTR, LPCSTR))(&CLocatorAPI::w_open))
+		.def("w_open", &w_open_script_2)
 		.def("w_open", (IWriter* (CLocatorAPI::*)(LPCSTR))(&CLocatorAPI::w_close))
 		.def("w_close", &CLocatorAPI::w_close)
 

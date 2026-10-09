@@ -62,6 +62,17 @@ LUALIB_API int (luaL_ref) (lua_State *L, int t);
 LUALIB_API void (luaL_unref) (lua_State *L, int t, int ref);
 
 LUALIB_API int (luaL_loadfile) (lua_State *L, const char *filename);
+
+/* X-Ray: the host may confine what scripts open. The guard is asked before
+** a script opens a file (what = 0 to read, 1 to write) or loads a chunk of
+** bytecode (what = 2, path is the chunk name); it returns 0 to refuse.
+** Without a guard everything is allowed. */
+#define LUAL_GUARD_READ		0
+#define LUAL_GUARD_WRITE	1
+#define LUAL_GUARD_BYTECODE	2
+typedef int (*luaL_PathGuard) (const char *path, int what);
+LUALIB_API void (luaL_setpathguard) (luaL_PathGuard guard);
+LUALIB_API int (luaL_pathallowed) (const char *path, int what);
 LUALIB_API int (luaL_loadbuffer) (lua_State *L, const char *buff, size_t sz,
                                   const char *name);
 LUALIB_API int (luaL_loadstring) (lua_State *L, const char *s);

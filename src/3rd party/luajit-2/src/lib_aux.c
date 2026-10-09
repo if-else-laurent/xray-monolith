@@ -28,6 +28,19 @@
 
 /* -- I/O error handling -------------------------------------------------- */
 
+/* X-Ray: see lauxlib.h. One guard for the process: there is one host. */
+static luaL_PathGuard path_guard = NULL;
+
+LUALIB_API void luaL_setpathguard(luaL_PathGuard guard)
+{
+  path_guard = guard;
+}
+
+LUALIB_API int luaL_pathallowed(const char *path, int what)
+{
+  return path_guard == NULL || path_guard(path, what) != 0;
+}
+
 LUALIB_API int luaL_fileresult(lua_State *L, int stat, const char *fname)
 {
   if (stat) {

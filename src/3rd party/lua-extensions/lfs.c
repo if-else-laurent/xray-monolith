@@ -108,10 +108,23 @@ typedef struct dir_data {
 #endif
 
 /*
+** X-Ray: the host may confine what scripts open (luaL_setpathguard). The
+** functions below that take a path ask the same guard as io.open does.
+*/
+static int lfs_denied (lua_State *L, const char *path) {
+	lua_pushnil (L);
+	lua_pushfstring (L, "%s: Permission denied", path);
+	return 2;
+}
+
+/*
 ** This function changes the working (current) directory
 */
 static int change_dir (lua_State *L) {
 	const char *path = luaL_checkstring(L, 1);
+	/* Relative paths are resolved against it, so it may only be moved to where writing is allowed. */
+	if (!luaL_pathallowed(path, LUAL_GUARD_WRITE))
+		return lfs_denied(L, path);
 	if (chdir(path)) {
 		lua_pushnil (L);
 		lua_pushfstring (L,"Unable to change working directory to '%s'\n%s\n",
@@ -218,6 +231,8 @@ static int lfs_lock_dir(lua_State *L) {
   char *ln;
   const char *lockfile = "/lockfile.lfs";
   const char *path = luaL_checklstring(L, 1, &pathl);
+  if (!luaL_pathallowed(path, LUAL_GUARD_WRITE))
+    return lfs_denied(L, path);
   ln = (char*)malloc(pathl + strlen(lockfile) + 1);
   if(!ln) { 
     lua_pushnil(L); lua_pushstring(L, strerror(errno)); return 2;
@@ -366,6 +381,8 @@ static int file_unlock (lua_State *L) {
 static int make_dir (lua_State *L) {
 	const char *path = luaL_checkstring (L, 1);
 	int fail;
+	if (!luaL_pathallowed(path, LUAL_GUARD_WRITE))
+		return lfs_denied(L, path);
 #ifdef _WIN32
 	int oldmask = umask (0);
 	fail = _mkdir (path);
@@ -391,6 +408,9 @@ static int make_dir (lua_State *L) {
 static int remove_dir (lua_State *L) {
 	const char *path = luaL_checkstring (L, 1);
 	int fail;
+
+	if (!luaL_pathallowed(path, LUAL_GUARD_WRITE))
+		return lfs_denied(L, path);
 
 	fail = rmdir (path);
 
@@ -475,6 +495,8 @@ static int dir_close (lua_State *L) {
 static int dir_iter_factory (lua_State *L) {
 	const char *path = luaL_checkstring (L, 1);
 	dir_data *d;
+	if (!luaL_pathallowed(path, LUAL_GUARD_READ))
+		luaL_error (L, "cannot open %s: Permission denied", path);
 	lua_pushcfunction (L, dir_iter);
 	d = (dir_data *) lua_newuserdata (L, sizeof(dir_data));
 	d->closed = 0;
@@ -591,6 +613,9 @@ static int file_utime (lua_State *L) {
 	const char *file = luaL_checkstring (L, 1);
 	struct utimbuf utb, *buf;
 
+	if (!luaL_pathallowed(file, LUAL_GUARD_WRITE))
+		return lfs_denied(L, file);
+
 	if (lua_gettop (L) == 1) /* set to current date/time */
 		buf = NULL;
 	else {
@@ -702,6 +727,9 @@ static int _file_info_ (lua_State *L, int (*st)(const char*, STAT_STRUCT*)) {
 	int i;
 	STAT_STRUCT info;
 	const char *file = luaL_checkstring (L, 1);
+
+	if (!luaL_pathallowed(file, LUAL_GUARD_READ))
+		return lfs_denied(L, file);
 
 	if (st(file, &info)) {
 		lua_pushnil (L);

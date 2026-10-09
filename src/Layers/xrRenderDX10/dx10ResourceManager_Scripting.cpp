@@ -328,9 +328,13 @@ static void *lua_alloc		(void *ud, void *ptr, size_t osize, size_t nsize) {
 
 // export
 extern int luaopen_lua_extensions(lua_State* L, bool IsDebug = false);
+// The script sandbox (script_storage.cpp) covers this machine too: it has loadfile and lfs.
+extern void script_sandbox_install();
 
 void CResourceManager::LS_Load()
 {
+	script_sandbox_install();
+
 #ifdef USE_GSC_MEM_ALLOC
 	LSVM = lua_newstate(lua_alloc, NULL);
 #else

@@ -78,11 +78,27 @@ static IOFileUD *io_file_new(lua_State *L)
   return iof;
 }
 
+/* X-Ray: a mode that can change the file asks for more than one that reads. */
+static int io_mode_guard(const char *mode)
+{
+  return (strchr(mode, 'w') || strchr(mode, 'a') || strchr(mode, '+')) ?
+	 LUAL_GUARD_WRITE : LUAL_GUARD_READ;
+}
+
+static FILE *io_guarded_fopen(const char *fname, const char *mode)
+{
+  if (!luaL_pathallowed(fname, io_mode_guard(mode))) {
+    errno = EACCES;
+    return NULL;
+  }
+  return fopen(fname, mode);
+}
+
 static IOFileUD *io_file_open(lua_State *L, const char *mode)
 {
   const char *fname = strdata(lj_lib_checkstr(L, 1));
   IOFileUD *iof = io_file_new(L);
-  iof->fp = fopen(fname, mode);
+  iof->fp = io_guarded_fopen(fname, mode);
   if (iof->fp == NULL)
     luaL_argerror(L, 1, lj_str_pushf(L, "%s: %s", fname, strerror(errno)));
   return iof;
@@ -399,7 +415,7 @@ LJLIB_CF(io_open)
   GCstr *s = lj_lib_optstr(L, 2);
   const char *mode = s ? strdata(s) : "r";
   IOFileUD *iof = io_file_new(L);
-  iof->fp = fopen(fname, mode);
+  iof->fp = io_guarded_fopen(fname, mode);
   return iof->fp != NULL ? 1 : luaL_fileresult(L, 0, fname);
 }
 
