@@ -176,7 +176,14 @@ Known gaps:
 - With `lua_debug 1` the sockets are opened for the debugger; a script can
   then talk to the network, though only about what it can read.
 
-Not verified in game yet.
+Verified in game on 2026-10-10 (build of `794b9e49`, CrossOver, GAMMA 0.9.5
+with 595 mods): the game starts, loads a save and plays; in a session with
+`-lua_sandbox_audit` and in two without it nothing of the modpack was
+refused. A probe script (Dev Tools, `jail`) reads a file of the game and
+writes in `appdata`, and is refused `c:\windows\win.ini`, `z:\etc\hosts`,
+writing to `z:\tmp`, to `bin`, to `commandline.txt`, leaving `appdata` by
+`..`, `require "ffi"`, `package.loadlib`, `lfs.dir("z:\")` and
+`getFS():r_open` outside.
 
 ## Building
 
@@ -212,6 +219,7 @@ Installed builds so far:
 |---|---|---|
 | 2026-10-05 | `6f9b2413` | first build of the branch, exe md5 `6bec99a5…` |
 | 2026-10-07 | `0913c773` | exit fix, exe md5 `5a2edd8c…` |
+| 2026-10-10 | `794b9e49` | script sandbox, exe md5 `16256324…`; the builds of 2026-10-08 and 2026-10-09 (`b7a6f15e`, `8c0b464f`) are not in this table, their files are kept as `.bak-2026-10-09` and `.bak-2026-10-10` |
 
 The game log starts with the build date of the executable
 (`'xrCore' build …`, `Modded Exes MT-TEST version …`), which tells which
