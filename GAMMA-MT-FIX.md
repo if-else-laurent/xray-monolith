@@ -185,6 +185,65 @@ writing to `z:\tmp`, to `bin`, to `commandline.txt`, leaving `appdata` by
 `..`, `require "ffi"`, `package.loadlib`, `lfs.dir("z:\")` and
 `getFS():r_open` outside.
 
+### 7. Shaders: the cache follows the sources, reload in the running game
+
+Files `src/Layers/xrRenderPC_R4/r4.cpp`,
+`src/Layers/xrRenderDX10/dx10ResourceManager_Resources.cpp`,
+`src/Layers/xrRender/SH_Atomic.h`, `ResourceManager.h`,
+`xrRender_console.cpp`. DX11 only.
+
+Three changes for work on shaders (`gamedata/shaders/r3`).
+
+**The cache is checked against the sources.** A compiled shader lies in
+`appdata/shaders_cache/r4/<name>.<ext>/<digits of the render settings>`:
+its CRC32 and the binary. Neither the name nor the check depended on the
+source, so an edited shader kept loading the old binary until the folder was
+removed by hand. Next to each binary there is now `<digits>.deps`, eight
+bytes: the CRC of the binary and a hash of the source with every file it
+includes. The includes are found by the `#include` lines, without looking at
+conditions or comments, each file read once in a run. A binary whose hash
+differs from the sources on disk is compiled again (log: `* shader <name>:
+the source has changed, compiling`). A binary without a `.deps` file, or with
+one for another binary — written by an earlier build — is taken as it is and
+gets its `.deps`; so the first start does not compile the whole cache, and a
+shader edited under an earlier build without clearing the cache stays stale
+until it is edited again. An earlier build ignores the `.deps` files.
+Precompiled shaders shipped in `gamedata/shaders/r3/objects/r4` are not
+checked.
+
+A cache file removed while the game runs is no longer opened: the file list
+of the engine still has it, and opening it was fatal.
+
+**A shader that no longer compiles does not close the game** when the cache
+has the binary of its last source that compiled. The log gets the usual
+`! <cache file>` and `! error: <text of the compiler>` and then
+`! shader <name> does not compile, its previous binary from the cache is
+used`. The `.deps` file is not touched, so the next start tries the source
+again. A shader that has never compiled stops the game as before.
+
+**`r__reload_shaders`** compiles again each vertex, pixel and geometry shader
+whose sources have changed and puts it in place of the loaded one, without a
+restart. The log has a line for each shader and a total:
+`* shaders: N reloaded, N do not compile, N need a restart, N with defines of
+a blender skipped`. Limits:
+
+- The passes built on a shader keep the slots of its constants, textures and
+  samplers, and the input layout of a vertex shader, and are not built again.
+  A shader that changed any of these (a new uniform, a texture it did not
+  read before, another vertex input) is left as loaded:
+  `! shader <name> is not reloaded: its constants, textures or inputs have
+  changed, restart the game`. Its new binary is already in the cache.
+- Shaders compiled with defines of their blender, whose names carry them in
+  brackets (`deffer_base_bump(USE_TDETAIL,)`), and hull, domain and compute
+  shaders are skipped.
+- A shader that does not compile stays as loaded.
+- New files are still not seen: the file list is made at start.
+
+The replaced shaders are released at the next reload, not at once: the
+backend remembers the current shader by its address.
+
+Not verified in the game yet.
+
 ## Building
 
 Workflow `.github/workflows/gamma-mt-fix.yml` ("GAMMA MT fix build"), based on
