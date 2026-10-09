@@ -1280,9 +1280,21 @@ static const shader_include_info& shader_include(const std::string& name)
 	return info;
 }
 
+// Set by CResourceManager::ReloadShaders, see there.
+extern bool g_shader_reload_probe;
+extern u32 g_shader_reload_serial;
+
 static u32 shader_source_hash(const void* source, u32 size)
 {
 	std::lock_guard<std::recursive_mutex> lock(shader_hash_guard());
+
+	// A reload reads the included files anew.
+	static u32 serial = 0;
+	if (serial != g_shader_reload_serial)
+	{
+		serial = g_shader_reload_serial;
+		shader_includes().clear();
+	}
 
 	u32 hash = crc32(source, size);
 	std::vector<std::string> queue;
@@ -2156,7 +2168,16 @@ HRESULT CRender::shader_compile(
 				}
 
 				if (!stale)
+				{
+					// A reload asks only which shaders have changed; this one has not.
+					if (g_shader_reload_probe)
+					{
+						file->close();
+						return S_FALSE;
+					}
+
 					_result = create_shader(pTarget, (DWORD*)file->pointer(), file->elapsed(), file_name, result, o.disasm);
+				}
 			}
 		}
 		file->close();
@@ -2206,7 +2227,8 @@ HRESULT CRender::shader_compile(
 			// An edited shader that does not compile used to close the game. The cache still
 			// has the binary of its last source that did compile: the game goes on with it.
 			// The .deps file is left as it is, so the next start tries the source again.
-			if (stale && INVALID_FILE_ATTRIBUTES != GetFileAttributesA(file_name))
+			// Not during a reload: there the loaded shader simply stays.
+			if (stale && !g_shader_reload_probe && INVALID_FILE_ATTRIBUTES != GetFileAttributesA(file_name))
 			{
 				IReader* file = FS.r_open(file_name);
 				if (file->length() > 4)

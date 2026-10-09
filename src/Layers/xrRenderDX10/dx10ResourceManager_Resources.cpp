@@ -217,6 +217,11 @@ SVS* CResourceManager::_CreateVS(LPCSTR _name)
 			c_entry = "main_vs_2_0";
 		}
 
+		_vs->source.file = cname;
+		_vs->source.entry = c_entry;
+		_vs->source.target = c_target;
+		_vs->source.skinning = Engine.External.GetSkinningMode();
+
 		HRESULT const _hr = ::Render->shader_compile(name, (DWORD const*)data, size, c_entry, c_target,
 		                                             D3D10_SHADER_PACK_MATRIX_ROW_MAJOR, (void*&)_vs);
 
@@ -347,6 +352,11 @@ SPS* CResourceManager::_CreatePS(LPCSTR _name)
 			c_entry = "main_ps_2_0";
 		}
 
+		_ps->source.file = cname;
+		_ps->source.entry = c_entry;
+		_ps->source.target = c_target;
+		_ps->source.skinning = Engine.External.GetSkinningMode();
+
 		HRESULT const _hr = ::Render->shader_compile(name, (DWORD const*)data, size, c_entry, c_target,
 		                                             D3D10_SHADER_PACK_MATRIX_ROW_MAJOR, (void*&)_ps);
 
@@ -419,6 +429,11 @@ SGS* CResourceManager::_CreateGS(LPCSTR name)
 		LPCSTR c_target = "gs_4_0";
 		LPCSTR c_entry = "main";
 
+		_gs->source.file = cname;
+		_gs->source.entry = c_entry;
+		_gs->source.target = c_target;
+		_gs->source.skinning = Engine.External.GetSkinningMode();
+
 		HRESULT const _hr = ::Render->shader_compile(name, (DWORD const*)file->pointer(), file->length(), c_entry,
 		                                             c_target, D3D10_SHADER_PACK_MATRIX_ROW_MAJOR, (void*&)_gs);
 
@@ -447,6 +462,129 @@ void CResourceManager::_DeleteGS(const SGS* gs)
 		return;
 	}
 	Msg("! ERROR: Failed to find compiled geometry shader '%s'", *gs->cName);
+}
+
+//--------------------------------------------------------------------------------------------------------------
+// Reload of the shaders in the running game: console command r__reload_shaders.
+//
+// Every vertex, pixel and geometry shader that was compiled from a source is given to the
+// compiler again. While g_shader_reload_probe is set, shader_compile answers S_FALSE for a
+// shader whose binary in the cache still matches its sources, and such a shader is left alone.
+// A changed one is compiled and takes the place of the loaded one, but only when its constants,
+// textures, samplers and vertex inputs are the same as before: the passes built on a shader
+// keep the slots of all of these, and are not built again here. Otherwise the shader is left
+// as it was and the log says that the game has to be started again.
+bool g_shader_reload_probe = false;
+// Grows with every reload; the hashes of included files are kept for one value of it.
+u32 g_shader_reload_serial = 0;
+
+namespace
+{
+	struct shader_reload_stats
+	{
+		u32 reloaded;
+		u32 failed;
+		u32 refused;
+		u32 skipped;
+	};
+
+	// Input layouts are found by the input signature of a vertex shader; equal signatures are one object.
+	bool reload_same_inputs(SVS* a, SVS* b) { return a->signature._get() == b->signature._get(); }
+
+	template <typename T>
+	bool reload_same_inputs(T*, T*) { return true; }
+
+	template <typename T, typename HW>
+	void reload_shader(T* live, HW* T::* hw, xr_vector<IUnknown*>& retired, shader_reload_stats& stats)
+	{
+		// "null", or a stage that is not reloaded
+		if (!live->source.file.size() || !(live->*hw)) return;
+
+		// Compiled with defines its blender has set (the name carries them in brackets):
+		// they are not known here.
+		if (strchr(*live->cName, '('))
+		{
+			++stats.skipped;
+			return;
+		}
+
+		IReader* file = FS.r_open(*live->source.file);
+		if (!file)
+		{
+			++stats.skipped;
+			return;
+		}
+
+		T* fresh = xr_new<T>();
+		fresh->*hw = 0;
+
+		// The defines of skinning come from the mode of the thread, as they did when the shader was made.
+		int const skinning = Engine.External.GetSkinningMode();
+		Engine.External.SetSkinningMode(live->source.skinning);
+		HRESULT const _hr = ::Render->shader_compile(*live->cName, (DWORD const*)file->pointer(), file->length(),
+		                                             *live->source.entry, *live->source.target,
+		                                             D3D10_SHADER_PACK_MATRIX_ROW_MAJOR, (void*&)fresh);
+		Engine.External.SetSkinningMode(skinning);
+		FS.r_close(file);
+
+		if (S_FALSE == _hr)
+		{
+			// not changed
+		}
+		else if (FAILED(_hr) || !(fresh->*hw))
+		{
+			// the compiler has written its message to the log
+			Msg("! shader %s is not reloaded: it does not compile", *live->cName);
+			++stats.failed;
+		}
+		else if (!live->constants.equal(fresh->constants) || !reload_same_inputs(live, fresh))
+		{
+			Msg("! shader %s is not reloaded: its constants, textures or inputs have changed, restart the game",
+			    *live->cName);
+			++stats.refused;
+		}
+		else
+		{
+			retired.push_back(live->*hw);
+			live->*hw = fresh->*hw;
+			fresh->*hw = 0;
+			Msg("* shader %s is reloaded", *live->cName);
+			++stats.reloaded;
+		}
+
+		xr_delete(fresh);
+	}
+}
+
+void CResourceManager::ReloadShaders()
+{
+	xrCriticalSectionGuard guard(creationGuard);
+
+	// The shaders replaced by the previous reload. They are released only now: until then the
+	// address of a shader the backend remembers as the current one cannot be given to a new one.
+	static xr_vector<IUnknown*> graveyard;
+
+	xr_vector<IUnknown*> retired;
+	shader_reload_stats stats = {0, 0, 0, 0};
+
+	++g_shader_reload_serial;
+	g_shader_reload_probe = true;
+
+	for (map_VS::iterator I = m_vs.begin(); I != m_vs.end(); ++I)
+		reload_shader(I->second, &SVS::vs, retired, stats);
+	for (map_PS::iterator I = m_ps.begin(); I != m_ps.end(); ++I)
+		reload_shader(I->second, &SPS::ps, retired, stats);
+	for (map_GS::iterator I = m_gs.begin(); I != m_gs.end(); ++I)
+		reload_shader(I->second, &SGS::gs, retired, stats);
+
+	g_shader_reload_probe = false;
+
+	for (u32 it = 0; it < graveyard.size(); it++)
+		graveyard[it]->Release();
+	graveyard.swap(retired);
+
+	Msg("* shaders: %u reloaded, %u do not compile, %u need a restart, %u with defines of a blender skipped",
+	    stats.reloaded, stats.failed, stats.refused, stats.skipped);
 }
 
 //--------------------------------------------------------------------------------------------------------------

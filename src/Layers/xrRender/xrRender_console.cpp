@@ -1078,6 +1078,20 @@ public:
 #endif	//	DEBUG
 #endif	//	(RENDER == R_R3) || (RENDER == R_R4)
 
+#if RENDER == R_R4
+// Compiles again the shaders whose sources have changed and puts them in place of the loaded ones.
+class CCC_ReloadShaders : public IConsole_Command
+{
+public:
+	CCC_ReloadShaders(LPCSTR N) : IConsole_Command(N) { bEmptyArgsHandled = TRUE; };
+
+	virtual void Execute(LPCSTR args)
+	{
+		dxRenderDeviceRender::Instance().Resources->ReloadShaders();
+	}
+};
+#endif	//	RENDER == R_R4
+
 //-----------------------------------------------------------------------
 void xrRender_initconsole()
 {
@@ -1569,6 +1583,9 @@ void xrRender_initconsole()
 	CMD3(CCC_Mask, "r__clear_models_on_unload", &psDeviceFlags2, rsClearModels); //Alundaio
 	CMD3(CCC_Mask, "r__clear_resources_on_unload", &psDeviceFlags2, rsClearAllResources);
 	CMD3(CCC_Mask, "r__use_precompiled_shaders", &psDeviceFlags2, rsPrecompiledShaders); //Alundaio
+#if RENDER == R_R4
+	CMD1(CCC_ReloadShaders, "r__reload_shaders");
+#endif
 	CMD3(CCC_Mask, "r__enable_grass_shadow", &psDeviceFlags2, rsGrassShadow); //Alundaio
 	CMD3(CCC_Mask, "r__no_scale_on_fade", &psDeviceFlags2, rsNoScale); //Alundaio
 #endif

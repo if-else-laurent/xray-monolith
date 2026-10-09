@@ -151,6 +151,8 @@ public:
 	//	DX10 cut void							_DeleteRTC			(const CRTC*	RT	);
 #if defined(USE_DX10) || defined(USE_DX11)
 	SGS*							_CreateGS			(LPCSTR Name);
+	// Compiles again the shaders whose sources have changed and puts them in place of the loaded ones.
+	void							ReloadShaders		();
 	void							_DeleteGS			(const SGS*	GS	);
 #endif	//	USE_DX10
 

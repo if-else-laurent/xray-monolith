@@ -24,10 +24,26 @@ struct ECORE_API SInputSignature : public xr_resource_flagged
 typedef	resptr_core<SInputSignature,resptr_base<SInputSignature> >	ref_input_sign;
 #endif	//	USE_DX10
 //////////////////////////////////////////////////////////////////////////
+// What a shader was compiled from: enough to compile it again in the running game
+// (CResourceManager::ReloadShaders). Empty for a shader that has no source of its own.
+struct SShaderSource
+{
+	shared_str file;
+	shared_str entry;
+	shared_str target;
+	int skinning;
+
+	SShaderSource() : skinning(-1)
+	{
+	}
+};
+
+//////////////////////////////////////////////////////////////////////////
 struct ECORE_API SVS : public xr_resource_named
 {
 	ID3DVertexShader* vs;
 	R_constant_table constants;
+	SShaderSource source;
 #if defined(USE_DX10) || defined(USE_DX11)
 	ref_input_sign						signature;
 #endif	//	USE_DX10
@@ -42,6 +58,7 @@ struct ECORE_API SPS : public xr_resource_named
 {
 	ID3DPixelShader* ps;
 	R_constant_table constants;
+	SShaderSource source;
 	~SPS();
 };
 
@@ -53,6 +70,7 @@ struct ECORE_API SGS : public xr_resource_named
 {
 	ID3DGeometryShader*					gs;
 	R_constant_table					constants;
+	SShaderSource						source;
 	~SGS			();
 };
 typedef	resptr_core<SGS,resptr_base<SGS> > ref_gs;
