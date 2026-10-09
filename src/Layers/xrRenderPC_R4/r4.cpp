@@ -2202,6 +2202,26 @@ HRESULT CRender::shader_compile(
 				Log("! error: ", (LPCSTR)pErrorBuf->GetBufferPointer());
 			else
 				Msg("Can't compile shader hr=0x%08x", _result);
+
+			// An edited shader that does not compile used to close the game. The cache still
+			// has the binary of its last source that did compile: the game goes on with it.
+			// The .deps file is left as it is, so the next start tries the source again.
+			if (stale && INVALID_FILE_ATTRIBUTES != GetFileAttributesA(file_name))
+			{
+				IReader* file = FS.r_open(file_name);
+				if (file->length() > 4)
+				{
+					u32 const crc = file->r_u32();
+					if (crc == crc32(file->pointer(), file->elapsed()))
+					{
+						_result = create_shader(pTarget, (DWORD*)file->pointer(), file->elapsed(), file_name, result,
+						                        o.disasm);
+						if (SUCCEEDED(_result))
+							Msg("! shader %s does not compile, its previous binary from the cache is used", name);
+					}
+				}
+				file->close();
+			}
 		}
 	}
 
