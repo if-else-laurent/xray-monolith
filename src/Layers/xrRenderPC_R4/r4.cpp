@@ -18,6 +18,8 @@
 
 #include "D3DX10Core.h"
 
+#include <mutex>
+
 CRender RImplementation;
 
 //////////////////////////////////////////////////////////////////////////
@@ -1196,21 +1198,144 @@ static HRESULT create_shader(
 }
 
 //--------------------------------------------------------------------------------------------------------------
+// A file a shader includes: in the shader folder of the render, or else from the root of the shaders.
+static IReader* shader_open_include(LPCSTR pFileName)
+{
+	string_path pname;
+	strconcat(sizeof(pname), pname, ::Render->getShaderPath(), pFileName);
+	IReader* R = FS.r_open("$game_shaders$", pname);
+	// possibly in shared directory or somewhere else - open directly
+	if (0 == R) R = FS.r_open("$game_shaders$", pFileName);
+	return R;
+}
+
+//--------------------------------------------------------------------------------------------------------------
+// The cache of compiled shaders is named by the render settings alone and checked by the CRC of
+// the binary alone, so an edited source kept loading its old binary until the cache was cleared
+// by hand. Next to each binary of the cache now lies `<name>.deps`: the CRC of the binary and a
+// hash of the source with every file it includes. A binary whose hash differs from the sources
+// on disk is compiled again.
+struct shader_include_info
+{
+	bool exists;
+	u32 crc;
+	std::vector<std::string> includes;
+};
+
+// Created on first use: a global with a constructor would run before the memory manager is ready.
+static std::recursive_mutex& shader_hash_guard()
+{
+	static std::recursive_mutex guard;
+	return guard;
+}
+
+static std::map<std::string, shader_include_info>& shader_includes()
+{
+	static std::map<std::string, shader_include_info>* includes = new std::map<std::string, shader_include_info>();
+	return *includes;
+}
+
+// Names in the `#include` lines of a source. Conditions and comments are not looked at: a file
+// that the compiler would skip only makes the hash depend on one file more.
+static void shader_scan_includes(const char* text, u32 size, std::vector<std::string>& names)
+{
+	const char* p = text;
+	const char* const end = text + size;
+	while (p < end)
+	{
+		p = (const char*)memchr(p, '#', end - p);
+		if (!p) break;
+		++p;
+		while (p < end && (*p == ' ' || *p == '\t')) ++p;
+		if (end - p < 7 || 0 != strncmp(p, "include", 7)) continue;
+		p += 7;
+		while (p < end && (*p == ' ' || *p == '\t')) ++p;
+		if (p >= end || (*p != '"' && *p != '<')) continue;
+		char const closing = (*p == '"') ? '"' : '>';
+		const char* const begin = ++p;
+		while (p < end && *p != closing && *p != '\n' && *p != '\r') ++p;
+		if (p < end && *p == closing && p > begin)
+			names.push_back(std::string(begin, p - begin));
+	}
+}
+
+// Each included file is read once in a run of the game.
+static const shader_include_info& shader_include(const std::string& name)
+{
+	std::map<std::string, shader_include_info>& known = shader_includes();
+	std::map<std::string, shader_include_info>::iterator I = known.find(name);
+	if (I != known.end()) return I->second;
+
+	shader_include_info& info = known[name];
+	info.exists = false;
+	info.crc = 0;
+	IReader* R = shader_open_include(name.c_str());
+	if (R)
+	{
+		info.exists = true;
+		info.crc = crc32(R->pointer(), (u32)R->length());
+		shader_scan_includes((const char*)R->pointer(), (u32)R->length(), info.includes);
+		FS.r_close(R);
+	}
+	return info;
+}
+
+static u32 shader_source_hash(const void* source, u32 size)
+{
+	std::lock_guard<std::recursive_mutex> lock(shader_hash_guard());
+
+	u32 hash = crc32(source, size);
+	std::vector<std::string> queue;
+	std::set<std::string> seen;
+	shader_scan_includes((const char*)source, size, queue);
+	for (size_t i = 0; i < queue.size(); ++i)
+	{
+		std::string name = queue[i];
+		for (size_t c = 0; c < name.size(); ++c)
+			name[c] = (char)tolower((unsigned char)name[c]);
+		if (!seen.insert(name).second) continue;
+
+		const shader_include_info& info = shader_include(name);
+		if (!info.exists) continue;
+		u32 const pair[2] = {hash, info.crc};
+		hash = crc32(pair, (u32)sizeof(pair));
+		queue.insert(queue.end(), info.includes.begin(), info.includes.end());
+	}
+	return hash;
+}
+
+// The `.deps` files are read and written past the file system of the engine: its list of files
+// does not learn that a file was removed while the game runs.
+static bool shader_deps_read(LPCSTR deps_name, u32& binary_crc, u32& source_hash)
+{
+	FILE* F = fopen(deps_name, "rb");
+	if (!F) return false;
+	u32 data[2] = {0, 0};
+	bool const ok = 2 == fread(data, sizeof(u32), 2, F);
+	fclose(F);
+	binary_crc = data[0];
+	source_hash = data[1];
+	return ok;
+}
+
+static void shader_deps_write(LPCSTR deps_name, u32 binary_crc, u32 source_hash)
+{
+	FILE* F = fopen(deps_name, "wb");
+	if (!F) return;
+	u32 const data[2] = {binary_crc, source_hash};
+	fwrite(data, sizeof(u32), 2, F);
+	fclose(F);
+}
+
+//--------------------------------------------------------------------------------------------------------------
 class includer : public ID3DInclude
 {
 public:
 	HRESULT __stdcall Open(D3D10_INCLUDE_TYPE IncludeType, LPCSTR pFileName, LPCVOID pParentData, LPCVOID* ppData,
 	                       UINT* pBytes)
 	{
-		string_path pname;
-		strconcat(sizeof(pname), pname, ::Render->getShaderPath(), pFileName);
-		IReader* R = FS.r_open("$game_shaders$", pname);
-		if (0 == R)
-		{
-			// possibly in shared directory or somewhere else - open directly
-			R = FS.r_open("$game_shaders$", pFileName);
-			if (0 == R) return E_FAIL;
-		}
+		IReader* R = shader_open_include(pFileName);
+		if (0 == R) return E_FAIL;
 
 		// duplicate and zero-terminate
 		u32 size = R->length();
@@ -1973,6 +2098,9 @@ HRESULT CRender::shader_compile(
 	FS.file_list(m_file_set, folder_name, FS_ListFiles | FS_RootOnly, "*");
 
 	string_path temp_file_name, file_name;
+	// A binary of the cache in appdata is checked against its sources; one shipped precompiled
+	// in gamedata is taken as it is.
+	bool own_cache = false;
 	if (psDeviceFlags2.test(rsPrecompiledShaders) || !match_shader_id(name, sh_name, m_file_set, temp_file_name))
 	{
 		string_path file;
@@ -1983,6 +2111,7 @@ HRESULT CRender::shader_compile(
 		xr_strcat(file, "\\");
 		xr_strcat(file, sh_name);
 		FS.update_path(file_name, "$app_data_root$", file);
+		own_cache = true;
 	}
 	else
 	{
@@ -1990,7 +2119,15 @@ HRESULT CRender::shader_compile(
 		xr_strcat(file_name, temp_file_name);
 	}
 
-	if (FS.exist(file_name))
+	string_path deps_name;
+	strconcat(sizeof(deps_name), deps_name, file_name, ".deps");
+	u32 const source_hash = own_cache ? shader_source_hash(pSrcData, SrcDataLen) : 0;
+	// The cache has a sound binary, but of other sources than those on disk.
+	bool stale = false;
+
+	// The list of files of the engine still has a file that was removed while the game runs,
+	// and opening such a file is fatal.
+	if (FS.exist(file_name) && INVALID_FILE_ATTRIBUTES != GetFileAttributesA(file_name))
 	{
 		IReader* file = FS.r_open(file_name);
 		if (file->length() > 4)
@@ -2002,7 +2139,24 @@ HRESULT CRender::shader_compile(
 
 			if (real_crc == crc)
 			{
-				_result = create_shader(pTarget, (DWORD*)file->pointer(), file->elapsed(), file_name, result, o.disasm);
+				if (own_cache)
+				{
+					u32 deps_crc = 0, deps_hash = 0;
+					if (!shader_deps_read(deps_name, deps_crc, deps_hash) || deps_crc != crc)
+					{
+						// A binary written by a build without this check: there is nothing to
+						// compare it with, so it is taken as it is and described from now on.
+						shader_deps_write(deps_name, crc, source_hash);
+					}
+					else if (deps_hash != source_hash)
+					{
+						stale = true;
+						Msg("* shader %s: the source has changed, compiling", name);
+					}
+				}
+
+				if (!stale)
+					_result = create_shader(pTarget, (DWORD*)file->pointer(), file->elapsed(), file_name, result, o.disasm);
 			}
 		}
 		file->close();
@@ -2034,6 +2188,8 @@ HRESULT CRender::shader_compile(
 			file->w_u32(crc);
 			file->w(pShaderBuf->GetBufferPointer(), (u32)pShaderBuf->GetBufferSize());
 			FS.w_close(file);
+			if (own_cache)
+				shader_deps_write(deps_name, crc, source_hash);
 
 			_result = create_shader(pTarget, (DWORD*)pShaderBuf->GetBufferPointer(), (u32)pShaderBuf->GetBufferSize(),
 			                        file_name, result, o.disasm);
