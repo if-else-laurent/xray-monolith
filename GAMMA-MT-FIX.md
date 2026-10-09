@@ -257,8 +257,10 @@ Verified in game on 2026-10-10 (build of `ade6828c`, CrossOver, GAMMA 0.9.5):
 - the game started with the shader that does not compile, on its previous
   binary, with the three lines in the log.
 
-Not tried: vertex and geometry shaders with a change, a change in an included
-file.
+- a vertex shader: an edit of `deffer_model_flat.vs` reloaded all five of its
+  skinning variants, the models moved on the screenshot and came back.
+
+Not tried: a geometry shader with a change, a change in an included file.
 
 ## Building
 
