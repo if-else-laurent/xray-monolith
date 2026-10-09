@@ -242,7 +242,23 @@ a blender skipped`. Limits:
 The replaced shaders are released at the next reload, not at once: the
 backend remembers the current shader by its address.
 
-Not verified in the game yet.
+Verified in game on 2026-10-10 (build of `ade6828c`, CrossOver, GAMMA 0.9.5):
+
+- the first start took the existing cache as it is, compiled nothing again
+  and wrote a `.deps` file for each shader it loaded;
+- an edited number in `nightvision_gen_3.ps` and `r__reload_shaders`: the
+  picture changed in the running game (screenshots before and after), the
+  command took under a second with nothing changed;
+- an undeclared name: the text of the compiler in the log, the loaded shader
+  stayed;
+- a new uniform of its own: refused with the line about a restart. Reading a
+  constant that the included files already declare (`rain_params`,
+  `fog_color`) does not change the table and is reloaded;
+- the game started with the shader that does not compile, on its previous
+  binary, with the three lines in the log.
+
+Not tried: vertex and geometry shaders with a change, a change in an included
+file.
 
 ## Building
 
@@ -279,6 +295,7 @@ Installed builds so far:
 | 2026-10-05 | `6f9b2413` | first build of the branch, exe md5 `6bec99a5…` |
 | 2026-10-07 | `0913c773` | exit fix, exe md5 `5a2edd8c…` |
 | 2026-10-10 | `794b9e49` | script sandbox, exe md5 `16256324…`; the builds of 2026-10-08 and 2026-10-09 (`b7a6f15e`, `8c0b464f`) are not in this table, their files are kept as `.bak-2026-10-09` and `.bak-2026-10-10` |
+| 2026-10-10 | `ade6828c` | shader cache and reload, exe md5 `5c5932e9…`; the previous files are kept as `.bak-2026-10-10b` |
 
 The game log starts with the build date of the executable
 (`'xrCore' build …`, `Modded Exes MT-TEST version …`), which tells which
