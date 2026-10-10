@@ -286,6 +286,41 @@ with the preview written and the game goes on, under DXMT and under DXVK;
 without ReShade under D3DMetal the game starts and saves as before. Under
 D3DMetal ReShade still crashes the game at device creation; not looked into.
 
+### 9. A draw whose vertex shader does not fit its vertices is skipped
+
+Files `src/Layers/xrRenderDX10/dx10R_Backend_Runtime.h`,
+`src/Layers/xrRender/R_Backend.h`, `R_Backend_Runtime.cpp`.
+
+`CBackend::ApplyVertexLayout` made an input layout for each pair of a vertex
+declaration and a vertex shader and did not look at the result; the pointer
+was not initialized either. A pair that cannot work exists in the modpack: a
+model whose material is a screen blender of `shaders.xr` (class `S_SET`:
+`glass`, `effects\glow`, `hud\...` and others without a material script for
+DX11). Such a blender compiles to the vertex shader `stub_notransform_t`,
+which takes `POSITIONT`, and a model has `POSITION`. Direct3D on Windows
+refuses the layout and drops the draw, so the part is simply not seen. DXMT
+writes `CreateInputLayout: Vertex shader expects POSITIONT_0 but it's not in
+input layout element descriptors`, then `Failed to create PSO: ... Vertex
+function has input attributes but no vertex descriptor was set`, the GPU
+faults (`Caused GPU Address Fault Error`) and macOS ignores every later
+command of the process: the scene turned into purple noise and then the
+picture froze with the game still running.
+
+Now the failure is kept as an empty layout, both `Render` functions return
+before the draw when the layout is empty, and the log gets one line for each
+such pair:
+
+    ! [render] vertex shader 'stub_notransform_t' does not fit the vertices it is given (POSITION0 NORMAL0 TANGENT0 BINORMAL0 TEXCOORD0), hr=0x80070057: draws with it are skipped
+
+The line names the shader and the vertices, not the model. The models found
+by their material so far: six characters with the shader `glass` on a mask or
+visor, `stalker_monolith_preacher.ogf` among them.
+
+Verified in game on 2026-10-10 (build of `7aefe68a`, DXMT, ReShade 6.8.0): in
+a session in Limansk, where the picture had broken twice that evening, the
+line appeared, the DXMT log had no device error, and the player noticed
+nothing on the screen.
+
 ## Building
 
 Workflow `.github/workflows/gamma-mt-fix.yml` ("GAMMA MT fix build"), based on
@@ -323,6 +358,7 @@ Installed builds so far:
 | 2026-10-10 | `794b9e49` | script sandbox, exe md5 `16256324…`; the builds of 2026-10-08 and 2026-10-09 (`b7a6f15e`, `8c0b464f`) are not in this table, their files are kept as `.bak-2026-10-09` and `.bak-2026-10-10` |
 | 2026-10-10 | `ade6828c` | shader cache and reload, exe md5 `5c5932e9…`; the previous files are kept as `.bak-2026-10-10b` |
 | 2026-10-10 | `111ee572` | libraries loaded at start (saving with ReShade), exe md5 `fbbae0c1…`; the previous files are kept as `.bak-2026-10-10c` |
+| 2026-10-10 | `7aefe68a` | a draw with a vertex shader that does not fit is skipped, exe md5 `57b5de1b…`; the previous files are kept as `.bak-2026-10-10d` |
 
 The game log starts with the build date of the executable
 (`'xrCore' build …`, `Modded Exes MT-TEST version …`), which tells which
