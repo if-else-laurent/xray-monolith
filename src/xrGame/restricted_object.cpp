@@ -102,6 +102,7 @@ BOOL CRestrictedObject::net_Spawn(CSE_Abstract* data)
 #endif
 
 	Level().space_restriction_manager().restrict(monster->ID, temp0, temp1);
+	m_restricted = true;
 
 	actual(true);
 
@@ -110,6 +111,13 @@ BOOL CRestrictedObject::net_Spawn(CSE_Abstract* data)
 
 void CRestrictedObject::net_Destroy()
 {
+	// An object whose net_Spawn failed before this part of it ran (CGameObject::net_Spawn
+	// refuses an ID that is already on the level) has no entry and no ID of its own; taking
+	// "its" entry away removed the one of another object, or of nobody.
+	if (!m_restricted)
+		return;
+
+	m_restricted = false;
 	Level().space_restriction_manager().unrestrict(m_object->ID());
 }
 

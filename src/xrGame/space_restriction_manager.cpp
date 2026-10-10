@@ -81,10 +81,14 @@ shared_str CSpaceRestrictionManager::out_restrictions(ALife::_OBJECT_ID id)
 	return ("");
 }
 
+// An object without an entry (see CRestrictedObject::net_Destroy for how that came about) is
+// an object without restrictions. These three used to read the value of the end of the map.
 shared_str CSpaceRestrictionManager::base_in_restrictions(ALife::_OBJECT_ID id)
 {
 	CLIENT_RESTRICTIONS::iterator I = m_clients->find(id);
 	VERIFY(m_clients->end() != I);
+	if (m_clients->end() == I)
+		return ("");
 	return ((*I).second.m_base_in_restrictions);
 }
 
@@ -92,6 +96,8 @@ shared_str CSpaceRestrictionManager::base_out_restrictions(ALife::_OBJECT_ID id)
 {
 	CLIENT_RESTRICTIONS::iterator I = m_clients->find(id);
 	VERIFY(m_clients->end() != I);
+	if (m_clients->end() == I)
+		return ("");
 	return ((*I).second.m_base_out_restrictions);
 }
 
@@ -99,6 +105,8 @@ CSpaceRestrictionManager::CRestrictionPtr CSpaceRestrictionManager::restriction(
 {
 	CLIENT_RESTRICTIONS::iterator I = m_clients->find(id);
 	VERIFY(m_clients->end() != I);
+	if (m_clients->end() == I)
+		return (0);
 	return ((*I).second.m_restriction);
 }
 
@@ -150,6 +158,13 @@ void CSpaceRestrictionManager::unrestrict(ALife::_OBJECT_ID id)
 
 	CLIENT_RESTRICTIONS::iterator I = m_clients->find(id);
 	VERIFY(I != m_clients->end());
+	// Erasing the end of the map breaks the tree, and the next search in it never returns:
+	// the game stood still with the primary thread in CRestrictedObject::accessible.
+	if (I == m_clients->end())
+	{
+		Msg("! [restrictions] object %d has no entry to remove", id);
+		return;
+	}
 	m_clients->erase(I);
 	collect_garbage();
 }

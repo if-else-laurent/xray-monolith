@@ -33,6 +33,8 @@ private:
 	mutable bool m_applied;
 	mutable bool m_removed;
 	bool m_actual;
+	// The object has an entry of its own in the space restriction manager (set in net_Spawn).
+	bool m_restricted;
 
 protected:
 	template <typename P, bool value>
