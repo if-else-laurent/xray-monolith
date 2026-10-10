@@ -119,9 +119,9 @@ last one runs once for each. Enter them one at a time in a running game.
 ## Known and not fixed
 
 - **PPL workers can deadlock under Wine on macOS.** Fix 2 avoids the deadlock
-  at shutdown only. The same mutual block of worker threads in
-  `NtFlushProcessWriteBuffers` is possible in the middle of a game, as a freeze
-  without a crash. It has not been observed so far. To check a frozen process:
+  at shutdown, and fix 11 lets one thread at a time into the call that
+  deadlocks; it was seen in the middle of a game once before fix 11. If the
+  game freezes at zero CPU again, check the frozen process:
   `sample <pid> 2 -file out.txt` and look for the worker threads sitting in
   `NtFlushProcessWriteBuffers`. The frames of the game code itself are not
   readable in such a sample because of Rosetta.
@@ -362,6 +362,38 @@ is the error in the log and no more.
 Verified on 2026-10-11 (build of `c46bafcd`): the game starts, loads a save
 and saves; the case itself was not reproduced.
 
+### 11. One thread at a time in FlushProcessWriteBuffers
+
+File `src/xrEngine/x_ray.cpp`.
+
+The mutual block of the workers of the Concurrency Runtime that fix 2 avoids
+at exit happened in the middle of the game (2026-10-11, while a save was
+being loaded from a running game): zero CPU, the primary thread waiting, and
+in `sample <pid> 3` seventeen threads in `NtFlushProcessWriteBuffers` ->
+`thread_get_register_pointer_values` -> `thread_get_state`. Wine on macOS
+flushes the write buffers by asking the kernel for the registers of every
+other thread; two threads doing that to each other under Rosetta never
+return.
+
+`concrt140.dll` and `msvcp140.dll` import `FlushProcessWriteBuffers` from
+kernel32 in the ordinary way (checked with `llvm-objdump -p`; the game itself
+does not import it). At the very start of `WinMain`, before any worker
+exists, the import entries of the two libraries are pointed at a wrapper
+that takes a critical section around the real call, so only one thread at a
+time asks for the registers of the others. The log says how many entries
+were replaced:
+
+    * FlushProcessWriteBuffers: one caller at a time, imports replaced: 2
+
+`-1` means kernel32 does not have the function, `0` that neither library
+imports it by name any more (a different runtime), and then nothing is
+changed.
+
+Verified on 2026-10-11 (build of `1fd36dd7`): the line is in the log with 2,
+the game starts, and four saves in a row were loaded from the running game.
+The block is rare and was not reproduced on purpose, so whether this ends it
+is known only as "not seen since".
+
 ## Building
 
 Workflow `.github/workflows/gamma-mt-fix.yml` ("GAMMA MT fix build"), based on
@@ -401,6 +433,7 @@ Installed builds so far:
 | 2026-10-10 | `111ee572` | libraries loaded at start (saving with ReShade), exe md5 `fbbae0c1…`; the previous files are kept as `.bak-2026-10-10c` |
 | 2026-10-10 | `7aefe68a` | a draw with a vertex shader that does not fit is skipped, exe md5 `57b5de1b…`; the previous files are kept as `.bak-2026-10-10d` |
 | 2026-10-11 | `c46bafcd` | a failed spawn does not break the map of space restrictions, exe md5 `7530499d…`; the previous files are kept as `.bak-2026-10-11` |
+| 2026-10-11 | `1fd36dd7` | one thread at a time in FlushProcessWriteBuffers, exe md5 `dcb0d114…`; the previous files are kept as `.bak-2026-10-11b` |
 
 The game log starts with the build date of the executable
 (`'xrCore' build …`, `Modded Exes MT-TEST version …`), which tells which
