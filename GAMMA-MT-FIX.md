@@ -262,6 +262,30 @@ Verified in game on 2026-10-10 (build of `ade6828c`, CrossOver, GAMMA 0.9.5):
 
 Not tried: a geometry shader with a change, a change in an included file.
 
+### 8. The D3D10 and D3DX libraries are loaded at start
+
+`src/xrEngine/x_ray.cpp`, `WinMain`
+
+With ReShade injected (`dxgi.dll` next to the exe) the game hung on every
+save, under DXVK and under DXMT alike: 0% CPU, the `.scop` and `.scoc`
+written, no preview `.dds`, the last line of `ReShade.log` — `Installing
+delayed hooks for "…d3d10_1.dll"`. The preview picture of a save goes through
+D3DX11 (`r__screenshot.cpp`, `SM_FOR_GAMESAVE`), which loads `d3d10_1.dll` and
+others on first use; ReShade installs its hooks on a module the moment it is
+loaded, and doing that in the middle of the game with the worker threads
+running deadlocked the process.
+
+`WinMain` now loads `d3d10.dll`, `d3d10core.dll`, `d3d10_1.dll`,
+`d3dcompiler_43.dll`, `d3dx10_43.dll` and `d3dx11_43.dll` right after
+`XR_EARLY_INIT` and the DPI setup, while the process has one thread. A missing
+library is skipped.
+
+Verified in the game on 2026-10-10 (build `111ee572`): with ReShade 5.7.0
+the hooks are installed at start (`ReShade.log`), two saves in a row pass
+with the preview written and the game goes on, under DXMT and under DXVK;
+without ReShade under D3DMetal the game starts and saves as before. Under
+D3DMetal ReShade still crashes the game at device creation; not looked into.
+
 ## Building
 
 Workflow `.github/workflows/gamma-mt-fix.yml` ("GAMMA MT fix build"), based on
@@ -298,6 +322,7 @@ Installed builds so far:
 | 2026-10-07 | `0913c773` | exit fix, exe md5 `5a2edd8c…` |
 | 2026-10-10 | `794b9e49` | script sandbox, exe md5 `16256324…`; the builds of 2026-10-08 and 2026-10-09 (`b7a6f15e`, `8c0b464f`) are not in this table, their files are kept as `.bak-2026-10-09` and `.bak-2026-10-10` |
 | 2026-10-10 | `ade6828c` | shader cache and reload, exe md5 `5c5932e9…`; the previous files are kept as `.bak-2026-10-10b` |
+| 2026-10-10 | `111ee572` | libraries loaded at start (saving with ReShade), exe md5 `fbbae0c1…`; the previous files are kept as `.bak-2026-10-10c` |
 
 The game log starts with the build date of the executable
 (`'xrCore' build …`, `Modded Exes MT-TEST version …`), which tells which
