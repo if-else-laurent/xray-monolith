@@ -490,6 +490,8 @@ private:
 
 private:
 	ID3DBlob* m_pInputSignature;
+	// Name of the vertex shader whose signature that is: for the log when no layout fits it.
+	LPCSTR m_pInputSignatureName;
 
 	bool m_bChangedRTorZB;
 #endif	//	USE_DX10

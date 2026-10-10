@@ -319,6 +319,8 @@ IC void CBackend::Render(D3DPRIMITIVETYPE T, u32 baseV, u32 startV, u32 countV, 
 	SRVSManager.Apply();
 	ApplyRTandZB();
 	ApplyVertexLayout();
+	// no layout fits this vertex shader and these vertices, see ApplyVertexLayout
+	if (!m_pInputLayout) return;
 	StateManager.Apply();
 	//	State manager may alter constants
 	constants.flush();
@@ -351,6 +353,8 @@ IC void CBackend::Render(D3DPRIMITIVETYPE T, u32 startV, u32 PC)
 	SRVSManager.Apply();
 	ApplyRTandZB();
 	ApplyVertexLayout();
+	// no layout fits this vertex shader and these vertices, see ApplyVertexLayout
+	if (!m_pInputLayout) return;
 	StateManager.Apply();
 	//	State manager may alter constants
 	constants.flush();
@@ -470,15 +474,36 @@ IC void CBackend::ApplyVertexLayout()
 
 	if (it == decl->vs_to_layout.end())
 	{
-		ID3DInputLayout* pLayout;
+		ID3DInputLayout* pLayout = nullptr;
 
-		CHK_DX(HW.pDevice->CreateInputLayout(
+		// A model drawn with a vertex shader made for other vertices (a material that names
+		// the wrong shader) has no layout. Direct3D on Windows drops such a draw; DXMT sends
+		// it to the GPU, which faults and then ignores every command of the process. The
+		// failure is remembered as an empty layout, and the draws with it are skipped.
+		HRESULT const _hr = HW.pDevice->CreateInputLayout(
 			&decl->dx10_dcl_code[0],
 			decl->dx10_dcl_code.size()-1,
 			m_pInputSignature->GetBufferPointer(),
 			m_pInputSignature->GetBufferSize(),
 			&pLayout
-		));
+		);
+
+		if (FAILED(_hr) || !pLayout)
+		{
+			pLayout = nullptr;
+
+			string512 elements = "";
+			for (size_t i = 0; i + 1 < decl->dx10_dcl_code.size(); ++i)
+			{
+				string64 element;
+				xr_sprintf(element, "%s%s%u", i ? " " : "", decl->dx10_dcl_code[i].SemanticName,
+				           decl->dx10_dcl_code[i].SemanticIndex);
+				if (xr_strlen(elements) + xr_strlen(element) + 1 < sizeof(elements))
+					xr_strcat(elements, element);
+			}
+			Msg("! [render] vertex shader '%s' does not fit the vertices it is given (%s), hr=0x%08x: draws with it are skipped",
+			    m_pInputSignatureName ? m_pInputSignatureName : "?", elements, _hr);
+		}
 
 		it = decl->vs_to_layout.insert(
 			std::pair<ID3DBlob*, ID3DInputLayout*>(m_pInputSignature, pLayout)).first;
@@ -494,12 +519,14 @@ IC void CBackend::ApplyVertexLayout()
 ICF void CBackend::set_VS(ref_vs& _vs)
 {
 	m_pInputSignature = _vs->signature->signature;
+	m_pInputSignatureName = _vs->cName.c_str();
 	set_VS(_vs->vs, _vs->cName.c_str());
 }
 
 ICF void CBackend::set_VS(SVS* _vs)
 {
 	m_pInputSignature = _vs->signature->signature;
+	m_pInputSignatureName = _vs->cName.c_str();
 	set_VS(_vs->vs, _vs->cName.c_str());
 }
 
