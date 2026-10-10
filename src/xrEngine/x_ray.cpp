@@ -1299,6 +1299,21 @@ int APIENTRY WinMain(HINSTANCE hInstance,
 		}
 	}
   
+	// Load now what D3DX loads on its own at the first game save (the preview
+	// picture of the save goes through D3DX11LoadTextureFromTexture and
+	// D3DX11SaveTextureToMemory). An injected hook library such as ReShade
+	// installs its hooks on these modules at the moment they are loaded; done
+	// in the middle of the game, with the worker threads running, that hung the
+	// process on every save. Here there is one thread. A library that is not
+	// there is simply not loaded.
+	{
+		static const char* const preload[] = {
+			"d3d10.dll", "d3d10core.dll", "d3d10_1.dll", "d3dcompiler_43.dll", "d3dx10_43.dll", "d3dx11_43.dll",
+		};
+		for (const char* name : preload)
+			LoadLibraryA(name);
+	}
+
 	//DllMainOpenAL32(NULL, DLL_PROCESS_ATTACH, NULL);
 	DllMainXrCore(NULL, DLL_PROCESS_ATTACH, NULL);
 	DllMainXrPhysics(NULL, DLL_PROCESS_ATTACH, NULL);
