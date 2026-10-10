@@ -1099,6 +1099,10 @@ int APIENTRY WinMain_impl(HINSTANCE hInstance,
 		// see serialize_flush_process_write_buffers below; -1: the function was not found
 		extern int g_flush_imports_replaced;
 		Msg("* FlushProcessWriteBuffers: one caller at a time, imports replaced: %d", g_flush_imports_replaced);
+		// see dinput_notify_without_waiting below; -1: not Wine, nothing was touched
+		extern int g_dinput_imports_replaced;
+		Msg("* DirectInput of Wine: the device refresh notice is not waited for, imports replaced: %d",
+		    g_dinput_imports_replaced);
 	}
 
 	InitSettings();
@@ -1352,6 +1356,47 @@ static void serialize_flush_process_write_buffers()
 		                                           (void*)&flush_process_write_buffers_serialized);
 }
 
+//
+// DirectInput of Wine keeps a worker thread with a hidden window. Whenever a window of the
+// primary thread is activated or deactivated (its WH_CBT hook), and on every Acquire and
+// Unacquire, dinput8.dll does SendMessageW(worker window, WM_USER + 0x10, 1, 0) - "look at the
+// list of devices again" - and waits for the answer. With ReShade loaded the wait can last for
+// ever: ReShade asks GetAsyncKeyState once a frame while holding the lock of its input state,
+// Wine delivers a pending activation inside that call, the hook sends the notice, and the
+// worker is at that moment waiting for the same lock of ReShade inside its hooked message
+// functions (raw input arrives at the worker window). Seen as a game that stands still at zero
+// CPU after being minimized and restored. The notice carries no data and needs no answer, so
+// the import of dinput8.dll is pointed at a wrapper that sends this one notice without waiting.
+typedef LRESULT (WINAPI* send_message_type)(HWND, UINT, WPARAM, LPARAM);
+static send_message_type s_dinput_send_message = nullptr;
+// How many imports were replaced; said in the log once it is open.
+int g_dinput_imports_replaced = -1;
+
+static LRESULT WINAPI dinput_send_message(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+{
+	if (message == WM_USER + 0x10 && wparam == 1 && lparam == 0 &&
+	    GetWindowThreadProcessId(window, nullptr) != GetCurrentThreadId())
+		return SendNotifyMessageW(window, message, wparam, lparam);
+
+	return s_dinput_send_message(window, message, wparam, lparam);
+}
+
+static void dinput_notify_without_waiting()
+{
+	// The message number and its meaning are those of Wine; the DirectInput of Windows is left alone.
+	HMODULE const ntdll = GetModuleHandleA("ntdll.dll");
+	if (!ntdll || !GetProcAddress(ntdll, "wine_get_version"))
+		return;
+
+	HMODULE const user32 = GetModuleHandleA("user32.dll");
+	s_dinput_send_message = user32 ? (send_message_type)GetProcAddress(user32, "SendMessageW") : nullptr;
+	if (!s_dinput_send_message)
+		return;
+
+	g_dinput_imports_replaced = replace_import(GetModuleHandleA("dinput8.dll"), "SendMessageW",
+	                                           (void*)&dinput_send_message);
+}
+
 int APIENTRY WinMain(HINSTANCE hInstance,
                      HINSTANCE hPrevInstance,
                      char* lpCmdLine,
@@ -1407,6 +1452,7 @@ int APIENTRY WinMain(HINSTANCE hInstance,
 
 	// Before anything starts a worker thread.
 	serialize_flush_process_write_buffers();
+	dinput_notify_without_waiting();
 
 	//DllMainOpenAL32(NULL, DLL_PROCESS_ATTACH, NULL);
 	DllMainXrCore(NULL, DLL_PROCESS_ATTACH, NULL);
