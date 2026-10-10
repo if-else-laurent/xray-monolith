@@ -321,6 +321,47 @@ a session in Limansk, where the picture had broken twice that evening, the
 line appeared, the DXMT log had no device error, and the player noticed
 nothing on the screen.
 
+### 10. A failed spawn no longer breaks the map of space restrictions
+
+Files `src/xrGame/restricted_object.cpp`, `restricted_object.h`,
+`restricted_object_inline.h`, `space_restriction_manager.cpp`.
+
+The game stood still in a fight (2026-10-10, Limansk): the process alive, one
+core at 100%, the log silent. `sample <pid> 3` showed every sample of the
+"X-RAY Primary thread" at one address of the executable, `0x14048ff2c`.
+Symbolized with the pdb of the build (`llvm-symbolizer --obj=AnomalyDX11.exe
+--inlines 0x14048ff2c`; the lldb of Xcode crashes on this pdb) it is the
+return address in `CPatrolPath::point<CAccessabilityEvaluator>` after the call
+of `CRestrictedObject::accessible`, and the disassembly of that function
+(`llvm-objdump -d`) has the loop the thread was in: the search of
+`std::map::find` in `CSpaceRestrictionManager::m_clients`, inlined. A search
+in a map that never returns means a broken tree.
+
+What broke it, by the log: ALife spawned a stalker that was still on the
+level (`[LSS] Spawning object [sim_default_bandit_052497]`, then `ERROR:
+CGameObject:net_spawn() Object with ID already exists!` for him and his
+items). `CGameObject::net_Spawn` refuses such an object before `setID` and
+before `CRestrictedObject::net_Spawn` adds its entry to the map; its
+`net_Destroy` still called `unrestrict(m_object->ID())`. That ID is not in the
+map, `unrestrict` did not check what `find` returned (a `VERIFY` only), and
+`erase(end())` is undefined: with MSVC it unlinks the head node.
+
+- `CRestrictedObject` has `m_restricted`: set when its entry is added, and
+  `net_Destroy` removes the entry only then.
+- `unrestrict` returns when the entry is not there and says so in the log:
+  `! [restrictions] object <id> has no entry to remove`.
+- `restriction(id)`, `base_in_restrictions(id)` and `base_out_restrictions(id)`
+  return nothing for an object without an entry; they read the value of the
+  end of the map.
+
+Not fixed: why ALife spawned an object that was still on the level. The log
+does not show the object leaving; the guess is that it was switched offline
+and online again before the client object was destroyed. With this fix that
+is the error in the log and no more.
+
+Verified on 2026-10-11 (build of `c46bafcd`): the game starts, loads a save
+and saves; the case itself was not reproduced.
+
 ## Building
 
 Workflow `.github/workflows/gamma-mt-fix.yml` ("GAMMA MT fix build"), based on
@@ -359,6 +400,7 @@ Installed builds so far:
 | 2026-10-10 | `ade6828c` | shader cache and reload, exe md5 `5c5932e9…`; the previous files are kept as `.bak-2026-10-10b` |
 | 2026-10-10 | `111ee572` | libraries loaded at start (saving with ReShade), exe md5 `fbbae0c1…`; the previous files are kept as `.bak-2026-10-10c` |
 | 2026-10-10 | `7aefe68a` | a draw with a vertex shader that does not fit is skipped, exe md5 `57b5de1b…`; the previous files are kept as `.bak-2026-10-10d` |
+| 2026-10-11 | `c46bafcd` | a failed spawn does not break the map of space restrictions, exe md5 `7530499d…`; the previous files are kept as `.bak-2026-10-11` |
 
 The game log starts with the build date of the executable
 (`'xrCore' build …`, `Modded Exes MT-TEST version …`), which tells which
