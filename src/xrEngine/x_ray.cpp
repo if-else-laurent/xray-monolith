@@ -1095,6 +1095,11 @@ int APIENTRY WinMain_impl(HINSTANCE hInstance,
 
 	compute_build_id();
 	Core._initialize("xray", NULL, TRUE, fsgame[0] ? fsgame : NULL);
+	{
+		// see serialize_flush_process_write_buffers below; -1: the function was not found
+		extern int g_flush_imports_replaced;
+		Msg("* FlushProcessWriteBuffers: one caller at a time, imports replaced: %d", g_flush_imports_replaced);
+	}
 
 	InitSettings();
 	Msg(XRAY_MONOLITH_VERSION);
@@ -1261,6 +1266,92 @@ extern BOOL DllMainXrPhysics(HANDLE hModule, DWORD ul_reason_for_call, LPVOID lp
 //extern BOOL DllMainXrRenderR3(HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReserved);
 //extern BOOL DllMainXrRenderR4(HANDLE hModule, DWORD  ul_reason_for_call, LPVOID lpReserved);
 
+// FlushProcessWriteBuffers, one caller at a time.
+//
+// The Concurrency Runtime (concrt140.dll, and msvcp140.dll) calls FlushProcessWriteBuffers from
+// its worker threads. Wine on macOS does it by asking the kernel for the registers of every
+// other thread (NtFlushProcessWriteBuffers -> thread_get_register_pointer_values ->
+// thread_get_state). Under Rosetta two threads doing that to each other at the same moment
+// never return, the rest of the workers pile up behind them, and the primary thread waits for
+// its tasks for ever: the game stands still at zero CPU, seen at exit and while loading a save.
+// The imports of the two libraries are pointed at a wrapper that lets one thread in at a time.
+typedef VOID (WINAPI* flush_buffers_type)(VOID);
+static flush_buffers_type s_flush_original = nullptr;
+static CRITICAL_SECTION s_flush_guard;
+// How many imports were replaced; said in the log once it is open.
+int g_flush_imports_replaced = -1;
+
+static VOID WINAPI flush_process_write_buffers_serialized(VOID)
+{
+	EnterCriticalSection(&s_flush_guard);
+	s_flush_original();
+	LeaveCriticalSection(&s_flush_guard);
+}
+
+// Points every import of `function` in a loaded module at `replacement`; how many there were.
+static int replace_import(HMODULE module, LPCSTR function, void* replacement)
+{
+	if (!module)
+		return 0;
+
+	BYTE* const base = (BYTE*)module;
+	IMAGE_DOS_HEADER const* const dos = (IMAGE_DOS_HEADER const*)base;
+	if (dos->e_magic != IMAGE_DOS_SIGNATURE)
+		return 0;
+
+	IMAGE_NT_HEADERS const* const nt = (IMAGE_NT_HEADERS const*)(base + dos->e_lfanew);
+	if (nt->Signature != IMAGE_NT_SIGNATURE)
+		return 0;
+
+	IMAGE_DATA_DIRECTORY const& directory = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+	if (!directory.VirtualAddress)
+		return 0;
+
+	int count = 0;
+	for (IMAGE_IMPORT_DESCRIPTOR* library = (IMAGE_IMPORT_DESCRIPTOR*)(base + directory.VirtualAddress);
+	     library->Name; ++library)
+	{
+		if (!library->OriginalFirstThunk)
+			continue;
+
+		IMAGE_THUNK_DATA* names = (IMAGE_THUNK_DATA*)(base + library->OriginalFirstThunk);
+		IMAGE_THUNK_DATA* slots = (IMAGE_THUNK_DATA*)(base + library->FirstThunk);
+		for (; names->u1.AddressOfData; ++names, ++slots)
+		{
+			if (IMAGE_SNAP_BY_ORDINAL(names->u1.Ordinal))
+				continue;
+
+			IMAGE_IMPORT_BY_NAME const* const by_name = (IMAGE_IMPORT_BY_NAME const*)(base + names->u1.AddressOfData);
+			if (0 != strcmp((LPCSTR)by_name->Name, function))
+				continue;
+
+			DWORD protection = 0;
+			if (!VirtualProtect(&slots->u1.Function, sizeof(slots->u1.Function), PAGE_READWRITE, &protection))
+				continue;
+
+			slots->u1.Function = (ULONG_PTR)replacement;
+			VirtualProtect(&slots->u1.Function, sizeof(slots->u1.Function), protection, &protection);
+			++count;
+		}
+	}
+	return count;
+}
+
+static void serialize_flush_process_write_buffers()
+{
+	HMODULE const kernel32 = GetModuleHandleA("kernel32.dll");
+	s_flush_original = kernel32 ? (flush_buffers_type)GetProcAddress(kernel32, "FlushProcessWriteBuffers") : nullptr;
+	if (!s_flush_original)
+		return;
+
+	InitializeCriticalSection(&s_flush_guard);
+	g_flush_imports_replaced = 0;
+	static const char* const users[] = {"concrt140.dll", "msvcp140.dll"};
+	for (const char* name : users)
+		g_flush_imports_replaced += replace_import(GetModuleHandleA(name), "FlushProcessWriteBuffers",
+		                                           (void*)&flush_process_write_buffers_serialized);
+}
+
 int APIENTRY WinMain(HINSTANCE hInstance,
                      HINSTANCE hPrevInstance,
                      char* lpCmdLine,
@@ -1313,6 +1404,9 @@ int APIENTRY WinMain(HINSTANCE hInstance,
 		for (const char* name : preload)
 			LoadLibraryA(name);
 	}
+
+	// Before anything starts a worker thread.
+	serialize_flush_process_write_buffers();
 
 	//DllMainOpenAL32(NULL, DLL_PROCESS_ATTACH, NULL);
 	DllMainXrCore(NULL, DLL_PROCESS_ATTACH, NULL);
