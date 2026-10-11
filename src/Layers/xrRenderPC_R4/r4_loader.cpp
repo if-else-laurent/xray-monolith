@@ -164,6 +164,8 @@ void CRender::level_Unload()
 	//*** SWI
 	for (I = 0; I < SWIs.size(); I++)xr_free(SWIs[I].sw);
 	SWIs.clear();
+	for (I = 0; I < kt_SWIs.size(); I++)xr_free(kt_SWIs[I].sw);
+	kt_SWIs.clear();
 
 	//*** VB/IB
 	for (I = 0; I < nVB.size(); I++) _RELEASE(nVB[I]);
@@ -326,7 +328,6 @@ void CRender::kt_LoadChunk()
 
 	kt_base_shader = u32(Shaders.size());
 	kt_base_visual = u32(Visuals.size());
-	kt_base_swi = u32(SWIs.size());
 	kt_base_vb = u32(nVB.size());
 	kt_base_ib = u32(nIB.size());
 	kt_base_xvb = u32(xVB.size());
@@ -547,23 +548,21 @@ void CRender::LoadSWIs(CStreamReader* base_fs)
 		CStreamReader* fs = base_fs->open_chunk(fsL_SWIS);
 		u32 item_count = fs->r_u32();
 
-		// kt: a chunk's items go after the level's own
-		const u32 swi_base = g_kt_chunk.loading ? u32(SWIs.size()) : 0;
-		if (!g_kt_chunk.loading)
-		{
-		xr_vector<FSlideWindowItem>::iterator it = SWIs.begin();
-		xr_vector<FSlideWindowItem>::iterator it_e = SWIs.end();
+		// kt: a chunk's items live in a vector of their own. Visuals keep pointers to the items, so
+		// the level's vector must not grow after its visuals are loaded.
+		xr_vector<FSlideWindowItem>& items = g_kt_chunk.loading ? kt_SWIs : SWIs;
+		xr_vector<FSlideWindowItem>::iterator it = items.begin();
+		xr_vector<FSlideWindowItem>::iterator it_e = items.end();
 
 		for (; it != it_e; ++it)
 			xr_free((*it).sw);
 
-		SWIs.clear_not_free();
-		}
+		items.clear_not_free();
 
-		SWIs.resize(swi_base + item_count);
+		items.resize(item_count);
 		for (u32 c = 0; c < item_count; c++)
 		{
-			FSlideWindowItem& swi = SWIs[swi_base + c];
+			FSlideWindowItem& swi = items[c];
 			swi.sw = NULL;
 			swi.reserved[0] = fs->r_u32();
 			swi.reserved[1] = fs->r_u32();

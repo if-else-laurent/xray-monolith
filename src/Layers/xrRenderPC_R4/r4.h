@@ -167,7 +167,8 @@ public:
 	xr_vector<dxRender_Visual*> Visuals;
 	// Seamless world experiment (kt): while a chunk is being read, the numbers in its files are
 	// local to it; these are added to reach its entries in the containers above.
-	u32 kt_base_shader, kt_base_visual, kt_base_swi;
+	u32 kt_base_shader, kt_base_visual;
+	xr_vector<FSlideWindowItem> kt_SWIs;
 	u32 kt_base_vb, kt_base_ib, kt_base_xvb, kt_base_xib;
 	void kt_LoadChunk();
 	CPSLibrary PSLibrary;

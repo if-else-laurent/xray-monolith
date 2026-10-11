@@ -771,7 +771,7 @@ ID3DIndexBuffer* CRender::getIB(int id, BOOL _alt)
 
 FSlideWindowItem* CRender::getSWI(int id)
 {
-	if (g_kt_chunk.loading) id += kt_base_swi;
+	if (g_kt_chunk.loading) return &kt_SWIs[id];
 	VERIFY(id<int(SWIs.size()));
 	return &SWIs[id];
 }
