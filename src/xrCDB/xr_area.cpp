@@ -128,7 +128,7 @@ void CObjectSpace::Load(IReader* F, CDB::build_callback build_callback)
 	});
 }
 
-void CObjectSpace::LoadWithChunks(CDB::build_callback build_callback, xr_vector<KtCform>& chunks, bool (*cut)(u32 piece, const Fvector& a, const Fvector& b, const Fvector& c))
+void CObjectSpace::LoadWithChunks(CDB::build_callback build_callback, xr_vector<KtCform>& chunks, bool (*cut)(u32 piece, u32 material, const Fvector& a, const Fvector& b, const Fvector& c))
 {
 	IReader* F = FS.r_open("$level$", "level.cform");
 	R_ASSERT(F);
@@ -164,7 +164,7 @@ void CObjectSpace::LoadWithChunks(CDB::build_callback build_callback, xr_vector<
 	CopyMemory(all_verts, verts, H.vertcount * sizeof(Fvector));
 	u32 kept = 0;
 	for (u32 i = 0; i < H.facecount; i++)
-		if (!cut(0, all_verts[tris[i].verts[0]], all_verts[tris[i].verts[1]], all_verts[tris[i].verts[2]])) all_tris[kept++] = tris[i];
+		if (!cut(0, tris[i].material, all_verts[tris[i].verts[0]], all_verts[tris[i].verts[1]], all_verts[tris[i].verts[2]])) all_tris[kept++] = tris[i];
 	u32 dropped = H.facecount - kept;
 	u32 vert_base = H.vertcount;
 	for (u32 c = 0; c < chunks.size(); c++)
@@ -180,7 +180,7 @@ void CObjectSpace::LoadWithChunks(CDB::build_callback build_callback, xr_vector<
 			T.verts[0] += vert_base;
 			T.verts[1] += vert_base;
 			T.verts[2] += vert_base;
-			if (!cut(c + 1, all_verts[T.verts[0]], all_verts[T.verts[1]], all_verts[T.verts[2]])) all_tris[kept++] = T;
+			if (!cut(c + 1, T.material, all_verts[T.verts[0]], all_verts[T.verts[1]], all_verts[T.verts[2]])) all_tris[kept++] = T;
 			else dropped++;
 		}
 		chunks[c].tri_count = kept - chunks[c].tri_base;

@@ -91,6 +91,20 @@ static void kt_chunk_setup()
 		g_kt_chunk.cuts.push_back(box);
 		Msg("* [kt chunk] cut: %.2f, %.2f, %.2f - %.2f, %.2f, %.2f", box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z);
 	}
+	for (LPCSTR k = strstr(Core.Params, "-kt_open "); k; k = strstr(k + 1, "-kt_open "))
+	{
+		Fvector a, b;
+		if (6 != sscanf(k + 9, "%f,%f,%f,%f,%f,%f", &a.x, &a.y, &a.z, &b.x, &b.y, &b.z)) continue;
+		Fbox box;
+		box.invalidate();
+		box.modify(a);
+		box.modify(b);
+		g_kt_chunk.opens.push_back(box);
+	}
+	if (LPCSTR k = strstr(Core.Params, "-kt_fake "))
+		sscanf(k + 9, "%u", &g_kt_chunk.fake_material);
+	if (!g_kt_chunk.opens.empty())
+		Msg("* [kt chunk] %u boxes where walls of material %u are taken away", u32(g_kt_chunk.opens.size()), g_kt_chunk.fake_material);
 	if (LPCSTR k = strstr(Core.Params, "-kt_mask "))
 	{
 		string_path name = "", file;
@@ -238,8 +252,9 @@ bool IGame_Level::Load(u32 dwNum)
 			cforms[i].offset = g_kt_chunk.pieces[i].offset;
 		}
 		ObjectSpace.LoadWithChunks([](Fvector* V, int Vcnt, CDB::TRI* T, int Tcnt, void* params) { g_pGameLevel->Load_GameSpecific_CFORM(T, Tcnt); },
-		                           cforms, [](u32 piece, const Fvector& a, const Fvector& b, const Fvector& c)
+		                           cforms, [](u32 piece, u32 material, const Fvector& a, const Fvector& b, const Fvector& c)
 		                           {
+			                           if (g_kt_chunk.opened(material, a, b, c)) return true;
 			                           // a big triangle is far scenery or a screen: it must not hang over the neighbour
 			                           const float big = 12.f * 12.f;
 			                           const bool strict = a.distance_to_sqr(b) > big || b.distance_to_sqr(c) > big || c.distance_to_sqr(a) > big;

@@ -80,6 +80,19 @@ struct ENGINE_API KtChunk
 	// with all three corners inside one is dropped from collisions and is not drawn: a doorway through
 	// a wall that used to close the level.
 	xr_vector<Fbox> cuts;
+	// -kt_open <x0>,<y0>,<z0>,<x1>,<y1>,<z1>, any number, and -kt_fake <material id>: a collision
+	// triangle of that material (materials\fake, the walls only the actor runs into) wholly inside
+	// such a box is dropped. A level stops the actor with them short of where its AI map ends; at a
+	// seam that is exactly the passage.
+	xr_vector<Fbox> opens;
+	u32 fake_material;
+	bool opened(u32 material, const Fvector& a, const Fvector& b, const Fvector& c) const
+	{
+		if (material != fake_material) return false;
+		for (u32 i = 0; i < opens.size(); i++)
+			if (opens[i].contains(a) && opens[i].contains(b) && opens[i].contains(c)) return true;
+		return false;
+	}
 	// -kt_ai_piece <file under $game_levels$>, any number: small AI maps in the world's coordinates on
 	// the level's grid, merged like the chunk's map. They fill the passage between the level and the chunk.
 	xr_vector<shared_str> ai_pieces;
@@ -130,7 +143,7 @@ struct ENGINE_API KtChunk
 		return strict && (foreign(piece, a.x, a.z) || foreign(piece, b.x, b.z) || foreign(piece, c.x, c.z));
 	}
 
-	KtChunk() : configured(false), active(false), loading(false), current(0), mask_x0(0), mask_z0(0), mask_cell(1), mask_nx(0), mask_nz(0), mask_pieces(0)
+	KtChunk() : configured(false), active(false), loading(false), current(0), fake_material(u32(-1)), mask_x0(0), mask_z0(0), mask_cell(1), mask_nx(0), mask_nz(0), mask_pieces(0)
 	{
 		name[0] = 0;
 		base[0] = 0;
