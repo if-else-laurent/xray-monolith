@@ -96,7 +96,7 @@ public:
 #ifndef AI_COMPILER
 	// Seamless world experiment (kt): the AI map got the nodes of one more level appended; they
 	// are told to belong to the same game vertex as the node `like_vertex` of this level.
-	IC void kt_extend(u32 new_count, u32 like_vertex);
+	IC void kt_extend(u32 new_count, const xr_vector<u32>& like);
 private:
 	CCell* m_kt_own;
 #endif

@@ -276,6 +276,40 @@ void CLevelGraph::kt_merge_chunk()
 				}
 			}
 		}
+		// Which of this level's nodes every added node hangs on: the one it is reached from over the
+		// links. The added node then belongs to the same point of the world graph, and whoever walks
+		// to it goes towards the seam it lies behind, not towards one fixed corner of the level.
+		m_kt_like.assign(extra, H1.count - 1);
+		{
+			xr_vector<u32> front, next;
+			xr_vector<u8> reached(extra, 0);
+			for (u32 i = 0; i < H1.count; i++)
+				for (u8 k = 0; k < 4; k++)
+				{
+					u32 to = NM[i].link(k);
+					if (to == invalid || to < H1.count || reached[to - H1.count]) continue;
+					reached[to - H1.count] = 1;
+					m_kt_like[to - H1.count] = i;
+					front.push_back(to);
+				}
+			while (!front.empty())
+			{
+				next.clear();
+				for (u32 n = 0; n < front.size(); n++)
+				{
+					const u32 from = front[n];
+					for (u8 k = 0; k < 4; k++)
+					{
+						u32 to = NM[from].link(k);
+						if (to == invalid || to < H1.count || reached[to - H1.count]) continue;
+						reached[to - H1.count] = 1;
+						m_kt_like[to - H1.count] = m_kt_like[from - H1.count];
+						next.push_back(to);
+					}
+				}
+				front.swap(next);
+			}
+		}
 		m_kt_storage = storage;
 		m_kt_own_count = H1.count;
 		m_header = (CHeader*)storage;

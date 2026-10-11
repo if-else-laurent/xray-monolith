@@ -259,10 +259,13 @@ public:
 	// Seamless world experiment (kt): the AI map of one more level merged into this one.
 	// 0 when nothing was merged; else the number of this level's own nodes, the chunk's follow.
 	u32 kt_own_vertex_count() const { return m_kt_own_count; }
+	// for every added node: the node of this level it is reached from
+	const xr_vector<u32>& kt_like() const { return m_kt_like; }
 private:
 	void kt_merge_chunk();
 	u8* m_kt_storage;
 	u32 m_kt_own_count;
+	xr_vector<u32> m_kt_like;
 public:
 #endif
 
