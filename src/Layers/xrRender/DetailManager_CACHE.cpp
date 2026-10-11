@@ -247,9 +247,14 @@ DetailSlot& CDetailManager::QueryDB(int sx, int sz)
 		bool theirs = (cell != 255) && (u32(cell & 0x7f) == kt_piece + 1);
 		if (cell == 255)
 		{
-			// no mask: theirs where the level has no slot of its own
+			// no mask: theirs where the level has no grass of its own
 			int db_x = sx + dtH.offs_x, db_z = sz + dtH.offs_z;
 			theirs = !((db_x >= 0) && (db_x < int(dtH.size_x)) && (db_z >= 0) && (db_z < int(dtH.size_z)));
+			if (!theirs)
+			{
+				DetailSlot& own = dtSlots[db_z * dtH.size_x + db_x];
+				theirs = (own.id0 == DetailSlot::ID_Empty) && (own.id1 == DetailSlot::ID_Empty) && (own.id2 == DetailSlot::ID_Empty) && (own.id3 == DetailSlot::ID_Empty);
+			}
 		}
 		if (theirs)
 		{
