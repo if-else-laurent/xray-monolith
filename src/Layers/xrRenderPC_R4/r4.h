@@ -178,6 +178,9 @@ public:
 	};
 	xr_vector<kt_cut_range> kt_cut_ranges;
 	void kt_CutScan(IReader* visuals);
+	// kt: vertices of the chunk's trees: they are local to the tree and move with its matrix, not with the buffer
+	xr_vector<kt_cut_range> kt_local_ranges;
+	void kt_LocalScan(IReader* visuals);
 	CPSLibrary PSLibrary;
 
 	CDetailManager* Details;

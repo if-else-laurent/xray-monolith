@@ -277,13 +277,20 @@ void CRender::LoadBuffers(CStreamReader* base_fs, BOOL _alternative)
 			if (g_kt_chunk.loading)
 			{
 				// kt: positions stored as three floats are in world space, shift them with the chunk.
-				// Packed positions (trees) are local to the model and move with its own matrix.
+				// The vertices of trees are local to the tree and move with its own matrix: left alone.
+				xr_vector<u8> local(vCount, 0);
+				for (u32 r = 0; r < kt_local_ranges.size(); r++)
+				{
+					const kt_cut_range& R = kt_local_ranges[r];
+					if (R.alt != u32(_alternative ? 1 : 0) || R.vb != n) continue;
+					for (u32 v = R.vbase; v < R.vbase + R.vcount && v < vCount; v++) local[v] = 1;
+				}
 				int moved = 0;
 				for (D3DVERTEXELEMENT9* e = dcl; e->Stream != 0xff; e++)
 				{
 					if (e->Usage != D3DDECLUSAGE_POSITION || e->UsageIndex != 0 || e->Type != D3DDECLTYPE_FLOAT3) continue;
 					for (u32 v = 0; v < vCount; v++)
-						((Fvector*)(pData + v * vSize + e->Offset))->add(g_kt_chunk.offset);
+						if (!local[v]) ((Fvector*)(pData + v * vSize + e->Offset))->add(g_kt_chunk.offset);
 					moved = 1;
 				}
 				Msg("* [kt chunk] VB %d: %d verts, positions %s", i, vCount, moved ? "shifted" : "left as they are");
@@ -364,6 +371,46 @@ void CRender::LoadBuffers(CStreamReader* base_fs, BOOL _alternative)
 	}
 	for (u32 n = 0; n < kt_kept.size(); n++) xr_free(kt_kept[n].data);
 	kt_kept.clear();
+}
+
+// kt: remembers where the geometry of the chunk's trees lies.
+void CRender::kt_LocalScan(IReader* fs)
+{
+	kt_local_ranges.clear();
+	if (!fs) return;
+	IReader* V = 0;
+	for (u32 index = 0; (V = fs->open_chunk(index)) != 0; index++)
+	{
+		ogf_header H;
+		if (V->find_chunk(OGF_HEADER))
+		{
+			V->r(&H, sizeof(H));
+			if (H.type == MT_TREE_ST || H.type == MT_TREE_PM)
+			{
+				kt_cut_range R;
+				R.ib = R.ibase = R.icount = 0;
+				if (V->find_chunk(OGF_GCONTAINER))
+				{
+					R.alt = 0;
+					R.vb = V->r_u32(); R.vbase = V->r_u32(); R.vcount = V->r_u32();
+					kt_local_ranges.push_back(R);
+				}
+				if (V->find_chunk(OGF_FASTPATH))
+				{
+					IReader* fast = V->open_chunk(OGF_FASTPATH);
+					if (fast->find_chunk(OGF_GCONTAINER))
+					{
+						R.alt = 1;
+						R.vb = fast->r_u32(); R.vbase = fast->r_u32(); R.vcount = fast->r_u32();
+						kt_local_ranges.push_back(R);
+					}
+					fast->close();
+				}
+			}
+		}
+		V->close();
+	}
+	Msg("* [kt chunk] trees: %u geometry ranges keep their own coordinates", u32(kt_local_ranges.size()));
 }
 
 // kt: finds the visuals whose box touches a cut box and remembers where their geometry lies.
@@ -479,6 +526,9 @@ void CRender::kt_LoadChunk()
 		IReader* visuals = fs->open_chunk(fsL_VISUALS);
 		kt_CutScan(visuals);
 		visuals->close();
+		visuals = fs->open_chunk(fsL_VISUALS);
+		kt_LocalScan(visuals);
+		visuals->close();
 
 		strconcat(sizeof(file), file, dir, "\\level.geom");
 		CStreamReader* geom = FS.rs_open(0, file);
@@ -493,6 +543,7 @@ void CRender::kt_LoadChunk()
 		LoadBuffers(geom, TRUE);
 		FS.r_close(geom);
 		kt_cut_ranges.clear();
+		kt_local_ranges.clear();
 	}
 
 	// Visuals
