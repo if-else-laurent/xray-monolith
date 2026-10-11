@@ -9,6 +9,9 @@
 #include "stdafx.h"
 #include "level_graph.h"
 #include "profiler.h"
+#ifndef AI_COMPILER
+#	include "../xrEngine/IGame_Level.h"
+#endif
 
 LPCSTR LEVEL_GRAPH_NAME = "level.ai";
 
@@ -35,6 +38,12 @@ CLevelGraph::CLevelGraph()
 	R_ASSERT(header().version() == XRAI_CURRENT_VERSION);
 	m_reader->advance(sizeof(CHeader));
 	m_nodes = (CVertex*)m_reader->pointer();
+#ifndef AI_COMPILER
+	m_kt_storage = 0;
+	m_kt_own_count = 0;
+	if (g_kt_chunk.active)
+		kt_merge_chunk();
+#endif
 	m_row_length = iFloor((header().box().max.z - header().box().min.z) / header().cell_size() + EPS_L + 1.5f);
 	m_column_length = iFloor((header().box().max.x - header().box().min.x) / header().cell_size() + EPS_L + 1.5f);
 	m_access_mask.assign(header().vertex_count(), true);
@@ -53,7 +62,167 @@ CLevelGraph::CLevelGraph()
 CLevelGraph::~CLevelGraph()
 {
 	FS.r_close(m_reader);
+#ifndef AI_COMPILER
+	xr_free(m_kt_storage);
+#endif
 }
+
+#ifndef AI_COMPILER
+// Seamless world experiment (kt). Builds one AI map out of two: this level's and the chunk's.
+//
+// The map is a grid of cells in the level's box; a node keeps its cell number and the numbers of its
+// four neighbours, and the nodes lie in the file sorted by cell number. So the merged map gets a box
+// that holds both levels on this level's grid, every node gets its cell number in that box, the
+// chunk's nodes follow this level's with their neighbour numbers moved up, and the nodes that end up
+// in adjacent cells across the border are made neighbours.
+//
+// Kept simple on purpose: the chunk has to lie wholly at greater x than this level, then the joined
+// array is still sorted and this level's node numbers do not change (spawn data and the cross table
+// refer to them). Any other placement needs the searches by cell to know about ranges.
+void CLevelGraph::kt_merge_chunk()
+{
+	string_path file;
+	FS.update_path(file, "$game_levels$", g_kt_chunk.name);
+	xr_strcat(file, "\\level.ai");
+	if (!FS.exist(file))
+	{
+		Msg("! [kt chunk] AI map: no file %s", file);
+		return;
+	}
+	IReader* chunk_reader = FS.r_open(file);
+
+	hdrNODES H1, H2;
+	CopyMemory(&H1, m_header, sizeof(hdrNODES));
+	CopyMemory(&H2, chunk_reader->pointer(), sizeof(hdrNODES));
+	const NodeCompressed* N1 = (const NodeCompressed*)(void*)m_nodes;
+	const NodeCompressed* N2 = (const NodeCompressed*)((const u8*)chunk_reader->pointer() + sizeof(hdrNODES));
+	const float cell = H1.size;
+	const u32 invalid = (1 << MAX_NODE_BIT_COUNT) - 1;
+
+	struct local
+	{
+		static u32 rows(const hdrNODES& H) { return u32(iFloor((H.aabb.max.z - H.aabb.min.z) / H.size + EPS_L + 1.5f)); }
+		static Fvector position(const hdrNODES& H, const NodeCompressed& N)
+		{
+			u32 row = rows(H);
+			Fvector P;
+			P.x = float(N.p.xz() / row) * H.size + H.aabb.min.x;
+			P.z = float(N.p.xz() % row) * H.size + H.aabb.min.z;
+			P.y = (float(N.p.y()) / 65535) * H.size_y + H.aabb.min.y;
+			return P;
+		}
+	};
+
+	bool ok = (H2.version == H1.version) && fsimilar(H2.size, cell);
+	if (!ok) Msg("! [kt chunk] AI map: version or cell size differ");
+
+	// The box of both, on this level's grid: its low corner is a whole number of cells below ours.
+	Fbox box2 = H2.aabb;
+	box2.min.add(g_kt_chunk.offset);
+	box2.max.add(g_kt_chunk.offset);
+	hdrNODES HM = H1;
+	HM.aabb.merge(box2);
+	HM.aabb.min.x = H1.aabb.min.x - cell * float(iCeil((H1.aabb.min.x - HM.aabb.min.x) / cell));
+	HM.aabb.min.z = H1.aabb.min.z - cell * float(iCeil((H1.aabb.min.z - HM.aabb.min.z) / cell));
+	HM.aabb.max.x += cell;
+	HM.aabb.max.z += cell;
+	HM.size_y = HM.aabb.max.y - HM.aabb.min.y + EPS_L;
+	HM.count = H1.count + H2.count;
+	const u32 row = local::rows(HM);
+	const u32 column = u32(iFloor((HM.aabb.max.x - HM.aabb.min.x) / cell + EPS_L + 1.5f));
+
+	if (ok && (HM.count >= invalid || u64(row) * column >= u64(invalid)))
+	{
+		Msg("! [kt chunk] AI map: both levels do not fit the limits: %u nodes, %u x %u cells", HM.count, column, row);
+		ok = false;
+	}
+
+	u8* storage = 0;
+	NodeCompressed* NM = 0;
+	u32 max_cell_own = 0, min_cell_chunk = u32(-1);
+	if (ok)
+	{
+		storage = xr_alloc<u8>(sizeof(hdrNODES) + HM.count * sizeof(NodeCompressed));
+		CopyMemory(storage, &HM, sizeof(hdrNODES));
+		NM = (NodeCompressed*)(storage + sizeof(hdrNODES));
+		for (u32 i = 0; i < HM.count; i++)
+		{
+			const bool own = i < H1.count;
+			NodeCompressed& N = NM[i];
+			N = own ? N1[i] : N2[i - H1.count];
+			Fvector P = local::position(own ? H1 : H2, N);
+			if (!own)
+			{
+				P.add(g_kt_chunk.offset);
+				for (u8 k = 0; k < 4; k++)
+					if (N.link(k) != invalid) N.link(k, N.link(k) + H1.count);
+			}
+			u32 pxz = u32(iFloor((P.x - HM.aabb.min.x) / cell + .5f)) * row + u32(iFloor((P.z - HM.aabb.min.z) / cell + .5f));
+			int py = iFloor(65535.f * (P.y - HM.aabb.min.y) / HM.size_y + EPS_S);
+			clamp(py, 0, 65535);
+			N.p.xz(pxz);
+			N.p.y(u16(py));
+			if (own) max_cell_own = _max(max_cell_own, pxz);
+			else min_cell_chunk = _min(min_cell_chunk, pxz);
+		}
+		if (min_cell_chunk <= max_cell_own)
+		{
+			Msg("! [kt chunk] AI map: the chunk must lie wholly at greater x than the level (cells %u and %u)", max_cell_own, min_cell_chunk);
+			xr_free(storage);
+			ok = false;
+		}
+	}
+
+	u32 stitched = 0;
+	if (ok)
+	{
+		// Neighbours across the border. Links: 0 is x-1, 1 is z+1, 2 is x+1, 3 is z-1.
+		static const int dx[4] = {-1, 0, 1, 0};
+		static const int dz[4] = {0, 1, 0, -1};
+		NodeCompressed* own_begin = NM;
+		NodeCompressed* own_end = NM + H1.count;
+		for (u32 i = H1.count; i < HM.count; i++)
+		{
+			NodeCompressed& N = NM[i];
+			for (u8 k = 0; k < 4; k++)
+			{
+				if (N.link(k) != invalid) continue;
+				int x = int(N.p.xz() / row) + dx[k];
+				int z = int(N.p.xz() % row) + dz[k];
+				if (x < 0 || z < 0 || z >= int(row)) continue;
+				u32 wanted = u32(x) * row + u32(z);
+				// first own node of that cell
+				NodeCompressed* lo = own_begin;
+				NodeCompressed* hi = own_end;
+				while (lo < hi)
+				{
+					NodeCompressed* mid = lo + (hi - lo) / 2;
+					if (mid->p.xz() < wanted) lo = mid + 1;
+					else hi = mid;
+				}
+				const u8 back = (k + 2) % 4;
+				const float y = (float(N.p.y()) / 65535) * HM.size_y;
+				for (NodeCompressed* M = lo; M != own_end && M->p.xz() == wanted; ++M)
+				{
+					if (M->link(back) != invalid) continue;
+					if (_abs((float(M->p.y()) / 65535) * HM.size_y - y) > 1.f) continue;
+					N.link(k, u32(M - NM));
+					M->link(back, i);
+					stitched++;
+					break;
+				}
+			}
+		}
+		m_kt_storage = storage;
+		m_kt_own_count = H1.count;
+		m_header = (CHeader*)storage;
+		m_nodes = (CVertex*)(void*)NM;
+		Msg("* [kt chunk] AI map: %u nodes of the level and %u of the chunk in %u x %u cells, %u links across the border",
+		    H1.count, H2.count, column, row, stitched);
+	}
+	FS.r_close(chunk_reader);
+}
+#endif
 
 u32 CLevelGraph::vertex(const Fvector& position) const
 {

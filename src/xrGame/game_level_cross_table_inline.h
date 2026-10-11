@@ -35,11 +35,33 @@ IC CGameLevelCrossTable::CGameLevelCrossTable(const void* buffer, const u32& buf
 	R_ASSERT2(m_tCrossTableHeader.version() == XRAI_CURRENT_VERSION, "Cross table version mismatch!");
 
 	m_tpaCrossTable = (CCell*)buffer;
+#ifndef AI_COMPILER
+	m_kt_own = 0;
+#endif
 }
 
 IC CGameLevelCrossTable::~CGameLevelCrossTable()
 {
+#ifndef AI_COMPILER
+	xr_free(m_kt_own);
+#endif
 };
+
+#ifndef AI_COMPILER
+IC void CGameLevelCrossTable::kt_extend(u32 new_count, u32 like_vertex)
+{
+	u32 old_count = m_tCrossTableHeader.level_vertex_count();
+	if (new_count <= old_count) return;
+	CCell* cells = xr_alloc<CCell>(new_count);
+	CopyMemory(cells, m_tpaCrossTable, old_count * sizeof(CCell));
+	for (u32 i = old_count; i < new_count; i++)
+		CopyMemory(cells + i, m_tpaCrossTable + like_vertex, sizeof(CCell));
+	xr_free(m_kt_own);
+	m_kt_own = cells;
+	m_tpaCrossTable = cells;
+	((u32*)&m_tCrossTableHeader)[1] = new_count; // dwNodeCount, the second field of the header
+}
+#endif
 
 IC const CGameLevelCrossTable::CCell& CGameLevelCrossTable::vertex(u32 level_vertex_id) const
 {

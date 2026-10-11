@@ -112,6 +112,12 @@ void CAI_Space::load(LPCSTR level_name)
 
 	m_level_graph = xr_new<CLevelGraph>();
 	game_graph().set_current_level(current_level.id());
+	if (m_level_graph->kt_own_vertex_count())
+	{
+		// seamless world experiment (kt): the nodes of the extra level count as the same place of the
+		// world graph as the level's last node, so that A-Life sees nothing change
+		const_cast<CGameLevelCrossTable&>(cross_table()).kt_extend(level_graph().header().vertex_count(), m_level_graph->kt_own_vertex_count() - 1);
+	}
 	R_ASSERT2(cross_table().header().level_guid() == level_graph().header().guid(),
 	          "cross_table doesn't correspond to the AI-map");
 	R_ASSERT2(cross_table().header().game_guid() == game_graph().header().guid(),

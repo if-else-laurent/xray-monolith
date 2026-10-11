@@ -252,6 +252,17 @@ public:
 
 	IC CVertex* vertices() { return m_nodes; }
 
+#ifndef AI_COMPILER
+	// Seamless world experiment (kt): the AI map of one more level merged into this one.
+	// 0 when nothing was merged; else the number of this level's own nodes, the chunk's follow.
+	u32 kt_own_vertex_count() const { return m_kt_own_count; }
+private:
+	void kt_merge_chunk();
+	u8* m_kt_storage;
+	u32 m_kt_own_count;
+public:
+#endif
+
 
 #ifdef DEBUG
 #	ifndef AI_COMPILER

@@ -92,6 +92,14 @@ public:
 	IC virtual ~CGameLevelCrossTable();
 	IC const CCell& vertex(u32 level_vertex_id) const;
 	IC const CHeader& header() const;
+
+#ifndef AI_COMPILER
+	// Seamless world experiment (kt): the AI map got the nodes of one more level appended; they
+	// are told to belong to the same game vertex as the node `like_vertex` of this level.
+	IC void kt_extend(u32 new_count, u32 like_vertex);
+private:
+	CCell* m_kt_own;
+#endif
 };
 
 #include "game_level_cross_table_inline.h"
