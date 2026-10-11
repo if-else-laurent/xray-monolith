@@ -117,12 +117,17 @@ struct ENGINE_API KtChunk
 	// the piece whose files are being read by the renderer: 0 the level, 1.. the chunks
 	u32 reading() const { return loading ? current + 1 : 0; }
 
-	// Is the triangle of the piece left out: wholly inside a cut box or wholly on another piece's land.
-	bool cut(u32 piece, const Fvector& a, const Fvector& b, const Fvector& c) const
+	// Is the triangle of the piece left out: wholly inside a cut box, or on another piece's land.
+	// On whose land a triangle lies is told by its middle. `strict` is for what must not stick out
+	// over the neighbour at all - the black planes that screen a level from outside, big far
+	// triangles: one corner on foreign land is enough.
+	bool cut(u32 piece, const Fvector& a, const Fvector& b, const Fvector& c, bool strict = false) const
 	{
 		for (u32 i = 0; i < cuts.size(); i++)
 			if (cuts[i].contains(a) && cuts[i].contains(b) && cuts[i].contains(c)) return true;
-		return foreign(piece, a.x, a.z) && foreign(piece, b.x, b.z) && foreign(piece, c.x, c.z);
+		if (mask.empty() || piece >= mask_pieces) return false;
+		if (foreign(piece, (a.x + b.x + c.x) / 3, (a.z + b.z + c.z) / 3)) return true;
+		return strict && (foreign(piece, a.x, a.z) || foreign(piece, b.x, b.z) || foreign(piece, c.x, c.z));
 	}
 
 	KtChunk() : configured(false), active(false), loading(false), current(0), mask_x0(0), mask_z0(0), mask_cell(1), mask_nx(0), mask_nz(0), mask_pieces(0)

@@ -49,6 +49,8 @@ void CRender::level_Load(IReader* fs)
 			*delim = 0;
 			xr_strcpy(n_tlist, delim + 1);
 			Shaders[i] = dxRenderDeviceRender::Instance().Resources->Create(n_sh, n_tlist);
+			if (kt_screen.size() <= i) kt_screen.resize(i + 1, 0);
+			kt_screen[i] = (strstr(n_tlist, "prop_fake") || strstr(n_tlist, "fx_lavahell")) ? 1 : 0;
 		}
 		chunk->close();
 	}
@@ -153,6 +155,7 @@ void CRender::level_Unload()
 	vLastCameraPos.set(0, 0, 0);
 	// 2.
 	g_kt_chunk.sectors.clear();
+	kt_screen.clear();
 	for (I = 0; I < Sectors.size(); I++) xr_delete(Sectors[I]);
 	Sectors.clear();
 	// 3.
@@ -362,7 +365,7 @@ void CRender::LoadBuffers(CStreamReader* base_fs, BOOL _alternative)
 					const Fvector& a = *(const Fvector*)(K.data + (R.vbase + idx[t]) * K.stride + K.position);
 					const Fvector& b = *(const Fvector*)(K.data + (R.vbase + idx[t + 1]) * K.stride + K.position);
 					const Fvector& c = *(const Fvector*)(K.data + (R.vbase + idx[t + 2]) * K.stride + K.position);
-					if (!g_kt_chunk.cut(g_kt_chunk.reading(), a, b, c)) continue;
+					if (!g_kt_chunk.cut(g_kt_chunk.reading(), a, b, c, R.strict != 0)) continue;
 					idx[t + 1] = idx[t + 2] = idx[t];
 					dropped++;
 				}
@@ -396,7 +399,7 @@ void CRender::kt_LocalScan(IReader* fs)
 			if (H.type == MT_TREE_ST || H.type == MT_TREE_PM)
 			{
 				kt_cut_range R;
-				R.ib = R.ibase = R.icount = 0;
+				R.ib = R.ibase = R.icount = R.strict = 0;
 				if (V->find_chunk(OGF_GCONTAINER))
 				{
 					R.alt = 0;
@@ -448,6 +451,8 @@ void CRender::kt_CutScan(IReader* fs)
 			if (touched)
 			{
 				kt_cut_range R;
+				const u32 shader = u32(H.shader_id) + (g_kt_chunk.loading ? kt_base_shader : 0);
+				R.strict = (shader < kt_screen.size() && kt_screen[shader]) ? 1 : 0;
 				if (V->find_chunk(OGF_GCONTAINER))
 				{
 					R.alt = 0;
@@ -535,6 +540,8 @@ void CRender::kt_LoadChunk(u32 piece)
 				xr_strcat(n_tlist, token);
 			}
 			Shaders[kt_base_shader + i] = dxRenderDeviceRender::Instance().Resources->Create(n_sh, n_tlist);
+			if (kt_screen.size() <= kt_base_shader + i) kt_screen.resize(kt_base_shader + i + 1, 0);
+			kt_screen[kt_base_shader + i] = (strstr(n_tlist, "prop_fake") || strstr(n_tlist, "fx_lavahell")) ? 1 : 0;
 		}
 		chunk->close();
 	}

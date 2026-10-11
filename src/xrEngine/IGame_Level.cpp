@@ -238,7 +238,13 @@ bool IGame_Level::Load(u32 dwNum)
 			cforms[i].offset = g_kt_chunk.pieces[i].offset;
 		}
 		ObjectSpace.LoadWithChunks([](Fvector* V, int Vcnt, CDB::TRI* T, int Tcnt, void* params) { g_pGameLevel->Load_GameSpecific_CFORM(T, Tcnt); },
-		                           cforms, [](u32 piece, const Fvector& a, const Fvector& b, const Fvector& c) { return g_kt_chunk.cut(piece, a, b, c); });
+		                           cforms, [](u32 piece, const Fvector& a, const Fvector& b, const Fvector& c)
+		                           {
+			                           // a big triangle is far scenery or a screen: it must not hang over the neighbour
+			                           const float big = 12.f * 12.f;
+			                           const bool strict = a.distance_to_sqr(b) > big || b.distance_to_sqr(c) > big || c.distance_to_sqr(a) > big;
+			                           return g_kt_chunk.cut(piece, a, b, c, strict);
+		                           });
 		for (u32 i = 0; i < cforms.size(); i++)
 		{
 			g_kt_chunk.pieces[i].tri_base = cforms[i].tri_base;
