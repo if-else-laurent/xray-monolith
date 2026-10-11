@@ -42,6 +42,11 @@ public:
 	IC const PATROL_REGISTRY& patrol_paths() const;
 
 	void add_path(shared_str, CPatrolPath*);
+	// seamless world experiment (kt): the paths of the levels standing next to the base one move into the world
+	void kt_place(const CGameGraph& game_graph, const CLevelGraph& level_graph);
+private:
+	bool m_kt_placed;
+public:
 	void remove_path(shared_str);
 };
 

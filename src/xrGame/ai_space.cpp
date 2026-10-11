@@ -22,6 +22,7 @@
 #include "doors_manager.h"
 #include "../xrEngine/dedicated_server_only.h"
 #include "../xrEngine/no_single.h"
+#include "../xrEngine/IGame_Level.h"
 
 extern ENGINE_API bool g_dedicated_server;
 
@@ -112,11 +113,18 @@ void CAI_Space::load(LPCSTR level_name)
 
 	m_level_graph = xr_new<CLevelGraph>();
 	game_graph().set_current_level(current_level.id());
+	const_cast<CGameGraph&>(game_graph()).kt_unplace();
 	if (m_level_graph->kt_own_vertex_count())
 	{
-		// seamless world experiment (kt): a node of an extra level counts as the same place of the
-		// world graph as the node of this level it is reached from, so that A-Life sees nothing change
-		const_cast<CGameLevelCrossTable&>(cross_table()).kt_extend(level_graph().header().vertex_count(), m_level_graph->kt_like());
+		// seamless world experiment (kt): the nodes of the levels standing next to this one belong
+		// to their own vertices of the world graph; the vertices, the patrol paths and (in A-Life)
+		// the objects of those levels move into this level's coordinates and node numbers
+		xr_vector<CGameLevelCrossTable::CCell> cells;
+		game_graph().kt_cross_cells(level_graph(), cells);
+		const_cast<CGameLevelCrossTable&>(cross_table()).kt_extend(level_graph().header().vertex_count(), &cells[0]);
+		const_cast<CGameGraph&>(game_graph()).kt_place(level_graph());
+		if (m_patrol_path_storage)
+			m_patrol_path_storage->kt_place(game_graph(), level_graph());
 	}
 	R_ASSERT2(cross_table().header().level_guid() == level_graph().header().guid(),
 	          "cross_table doesn't correspond to the AI-map");
@@ -146,6 +154,106 @@ void CAI_Space::load(LPCSTR level_name)
 #ifdef DEBUG
 	Msg						("* Loading ai space is successfully completed (%.3fs, %7.3f Mb)",timer.GetElapsed_sec(),float(Memory.mem_usage() - mem_usage)/1048576.0);
 #endif
+}
+
+// Seamless world experiment (kt), the world graph's side. See game_graph.h.
+void CGameGraph::kt_claim()
+{
+	m_kt_chunk.clear();
+	m_kt_placed = false;
+	if (!kt_chunk_keys() || !g_kt_chunk.base[0]) return;
+	int base = -1;
+	int chunk_of_level[256];
+	for (u32 i = 0; i < 256; i++) chunk_of_level[i] = -1;
+	GameGraph::LEVEL_MAP::const_iterator I = header().levels().begin(), E = header().levels().end();
+	for (; I != E; ++I)
+	{
+		LPCSTR name = *(*I).second.name();
+		if (0 == stricmp(name, g_kt_chunk.base)) base = int((*I).first);
+		for (u32 n = 0; n < g_kt_chunk.pieces.size(); n++)
+			if (0 == stricmp(name, g_kt_chunk.pieces[n].name)) chunk_of_level[(*I).first] = int(n);
+	}
+	if (base < 0) return;
+
+	// the file's memory is not ours to write into
+	const u32 size = u32((u8*)m_cross_tables - (u8*)m_nodes);
+	xr_free(m_kt_nodes);
+	m_kt_nodes = xr_alloc<u8>(size);
+	CopyMemory(m_kt_nodes, m_nodes, size);
+	m_nodes = (CVertex*)m_kt_nodes;
+
+	const u32 count = header().vertex_count();
+	m_kt_chunk.assign(count, s8(-1));
+	m_kt_node.resize(count);
+	u32 claimed = 0;
+	for (u32 i = 0; i < count; i++)
+	{
+		m_kt_node[i] = m_nodes[i].tNodeID;
+		const int chunk = chunk_of_level[m_nodes[i].tLevelID];
+		if (chunk < 0) continue;
+		m_kt_chunk[i] = s8(chunk);
+		m_nodes[i].tLevelID = u8(base);
+		claimed++;
+	}
+	Msg("* [kt world] %u vertices of the world graph now belong to %s", claimed, g_kt_chunk.base);
+}
+
+void CGameGraph::kt_place(const CLevelGraph& level_graph)
+{
+	if (m_kt_chunk.empty() || m_kt_placed) return;
+	u32 moved = 0, lost = 0;
+	for (u32 i = 0, count = header().vertex_count(); i < count; i++)
+	{
+		const int chunk = m_kt_chunk[i];
+		if (chunk < 0) continue;
+		m_nodes[i].tLocalPoint.add(g_kt_chunk.pieces[chunk].offset);
+		u32 node = level_graph.kt_node(u32(chunk), m_kt_node[i]);
+		if (!level_graph.valid_vertex_id(node) && level_graph.valid_vertex_position(m_nodes[i].tLocalPoint))
+			node = level_graph.vertex_id(m_nodes[i].tLocalPoint);
+		if (!level_graph.valid_vertex_id(node))
+		{
+			lost++;
+			node = 0;
+		}
+		m_nodes[i].tNodeID = node;
+		moved++;
+	}
+	m_kt_placed = true;
+	Msg("* [kt world] %u vertices of the world graph moved into the world, %u without a node", moved, lost);
+}
+
+void CGameGraph::kt_cross_cells(const CLevelGraph& level_graph, xr_vector<CGameLevelCrossTable::CCell>& cells) const
+{
+	const u32 own = level_graph.kt_own_vertex_count();
+	const u32 extra = level_graph.header().vertex_count() - own;
+	const xr_vector<u32>& like = level_graph.kt_like();
+	cells.resize(extra);
+	// first as before: the cell of the base level's node it is reached from; the small pieces of
+	// our own and whatever has no table keep it
+	for (u32 i = 0; i < extra; i++)
+		cells[i] = cross_table().vertex(like[i]);
+
+	u32* table = m_cross_tables;
+	GameGraph::LEVEL_MAP::const_iterator I = header().levels().begin(), E = header().levels().end();
+	for (; I != E; ++I, table = (u32*)((u8*)table + *table))
+	{
+		int chunk = -1;
+		for (u32 n = 0; n < g_kt_chunk.pieces.size(); n++)
+			if (0 == stricmp(*(*I).second.name(), g_kt_chunk.pieces[n].name)) chunk = int(n);
+		if (chunk < 0) continue;
+		CGameLevelCrossTable theirs(table + 1, *table);
+		u32 taken = 0, strangers = 0;
+		for (u32 local = 0, count = theirs.header().level_vertex_count(); local < count; local++)
+		{
+			const u32 node = level_graph.kt_node(u32(chunk), local);
+			if (node == u32(-1)) continue;
+			cells[node - own] = theirs.vertex(local);
+			if (kt_chunk(theirs.vertex(local).game_vertex_id()) != chunk) strangers++;
+			taken++;
+		}
+		Msg("* [kt world] %s: %u of %u nodes got their own vertices of the world graph, %u point elsewhere",
+		    g_kt_chunk.pieces[chunk].name, taken, theirs.header().level_vertex_count(), strangers);
+	}
 }
 
 void CAI_Space::unload(bool reload)

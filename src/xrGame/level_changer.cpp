@@ -180,8 +180,8 @@ bool CLevelChanger::feel_touch_contact(CObject* object)
 	// one, the actor walks there himself.
 	if (g_kt_chunk.active && ai().game_graph().valid_vertex_id(m_game_vertex_id))
 	{
-		const GameGraph::_LEVEL_ID level_id = ai().game_graph().vertex(m_game_vertex_id)->level_id();
-		if (g_kt_chunk.has(*ai().game_graph().header().level(level_id).name()))
+		// (the vertices of such levels are told to be on this one)
+		if (ai().game_graph().vertex(m_game_vertex_id)->level_id() == ai().level_graph().level_id())
 			return (false);
 	}
 

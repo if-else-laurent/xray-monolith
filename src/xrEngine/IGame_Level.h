@@ -179,6 +179,8 @@ extern ENGINE_API KtChunk g_kt_chunk;
 // The AI map is read on its own thread next to the level, so it asks by itself and does not look at
 // g_kt_chunk.active, which the level sets for the rest of the game.
 ENGINE_API bool kt_chunk_wanted();
+// Were the keys given at all, whatever level is being loaded (asked before the level is known).
+ENGINE_API bool kt_chunk_keys();
 
 class ENGINE_API IGame_Level :
 	public DLL_Pure,

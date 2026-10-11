@@ -48,14 +48,13 @@ IC CGameLevelCrossTable::~CGameLevelCrossTable()
 };
 
 #ifndef AI_COMPILER
-IC void CGameLevelCrossTable::kt_extend(u32 new_count, const xr_vector<u32>& like)
+IC void CGameLevelCrossTable::kt_extend(u32 new_count, const CCell* added)
 {
 	u32 old_count = m_tCrossTableHeader.level_vertex_count();
 	if (new_count <= old_count) return;
 	CCell* cells = xr_alloc<CCell>(new_count);
 	CopyMemory(cells, m_tpaCrossTable, old_count * sizeof(CCell));
-	for (u32 i = old_count; i < new_count; i++)
-		CopyMemory(cells + i, m_tpaCrossTable + like[i - old_count], sizeof(CCell));
+	CopyMemory(cells + old_count, added, (new_count - old_count) * sizeof(CCell));
 	xr_free(m_kt_own);
 	m_kt_own = cells;
 	m_tpaCrossTable = cells;

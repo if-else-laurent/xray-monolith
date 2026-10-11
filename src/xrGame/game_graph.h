@@ -76,6 +76,30 @@ public:
 	IC _GRAPH_ID vertex_id(const CVertex* vertex) const;
 	IC void set_current_level(u32 level_id);
 	IC const _GRAPH_ID& current_level_vertex() const;
+
+#ifdef XRGAME_EXPORTS
+	// Seamless world experiment (kt). The levels that stand next to the base level (-kt_chunk with
+	// -kt_chunk_base) become one place for the simulation: their vertices are told to be on the base
+	// level (kt_claim, right after the graph is read), and once the merged AI map is there their
+	// points and nodes are moved into the world's coordinates and numbers (kt_place).
+	void kt_claim();
+	void kt_place(const class CLevelGraph& level_graph);
+	void kt_unplace() { m_kt_placed = false; }
+	// is the level being played the world's base, with the chunks' vertices moved into it
+	bool kt_placed() const { return m_kt_placed; }
+	// the chunk (the order of -kt_chunk keys) the vertex came from; -1: not a chunk's
+	int kt_chunk(u32 vertex_id) const { return vertex_id < m_kt_chunk.size() ? int(m_kt_chunk[vertex_id]) : -1; }
+	// cross table cells for the nodes added to the base level's AI map
+	void kt_cross_cells(const class CLevelGraph& level_graph, xr_vector<CGameLevelCrossTable::CCell>& cells) const;
+private:
+	xr_vector<s8> m_kt_chunk;
+	xr_vector<u32> m_kt_node; // the vertices' nodes as the file has them
+	bool m_kt_placed;
+public:
+#endif
+private:
+	u8* m_kt_nodes; // our own copy of the vertices and edges, when they are changed
+public:
 DECLARE_SCRIPT_REGISTER_FUNCTION
 };
 

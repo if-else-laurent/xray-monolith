@@ -262,6 +262,7 @@ void CALifeUpdateManager::new_game(LPCSTR save_name)
 	can_register_objects(false);
 	spawn_new_objects();
 	can_register_objects(true);
+	kt_move_objects(true);
 
 	CALifeObjectRegistry::OBJECT_REGISTRY::iterator I = objects().objects().begin();
 	CALifeObjectRegistry::OBJECT_REGISTRY::iterator E = objects().objects().end();

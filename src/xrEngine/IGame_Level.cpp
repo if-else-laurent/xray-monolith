@@ -27,6 +27,14 @@ static bool kt_setup_done = false;
 
 static void kt_chunk_setup();
 
+ENGINE_API bool kt_chunk_keys()
+{
+	xrCriticalSectionGuard guard(kt_setup_lock);
+	if (!kt_setup_done) kt_chunk_setup();
+	kt_setup_done = true;
+	return g_kt_chunk.configured;
+}
+
 ENGINE_API bool kt_chunk_wanted()
 {
 	{

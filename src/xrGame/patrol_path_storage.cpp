@@ -11,6 +11,9 @@
 #include "patrol_path.h"
 #include "patrol_point.h"
 #include "levelgamedef.h"
+#include "game_graph.h"
+#include "level_graph.h"
+#include "../xrEngine/IGame_Level.h"
 
 CPatrolPathStorage::~CPatrolPathStorage()
 {
@@ -154,6 +157,33 @@ void CPatrolPathStorage::save(IWriter& stream)
 void CPatrolPathStorage::remove_path(shared_str patrol_name)
 {
 	m_registry.erase(patrol_name);
+}
+
+void CPatrolPathStorage::kt_place(const CGameGraph& game_graph, const CLevelGraph& level_graph)
+{
+	if (m_kt_placed) return;
+	m_kt_placed = true;
+	u32 moved = 0, lost = 0;
+	for (iterator I = m_registry.begin(); I != m_registry.end(); ++I)
+	{
+		CPatrolPath::VERTICES& points = (*I).second->vertices();
+		for (CPatrolPath::VERTICES::iterator P = points.begin(); P != points.end(); ++P)
+		{
+			CPatrolPoint& point = (*P).second->data();
+			const int chunk = game_graph.kt_chunk(point.kt_game_vertex_id());
+			if (chunk < 0) continue;
+			const Fvector& offset = g_kt_chunk.pieces[chunk].offset;
+			Fvector position = point.position();
+			position.add(offset);
+			u32 node = level_graph.kt_node(u32(chunk), point.kt_level_vertex_id());
+			if (!level_graph.valid_vertex_id(node) && level_graph.valid_vertex_position(position))
+				node = level_graph.vertex_id(position);
+			if (!level_graph.valid_vertex_id(node)) lost++;
+			point.kt_move(offset, node);
+			moved++;
+		}
+	}
+	Msg("* [kt world] %u patrol points moved into the world, %u without a node", moved, lost);
 }
 
 void CPatrolPathStorage::add_path(shared_str patrol_name, CPatrolPath *path)

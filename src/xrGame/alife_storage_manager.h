@@ -32,6 +32,9 @@ public:
 	bool load(LPCSTR save_name = 0);
 	void save(LPCSTR save_name = 0, bool update_name = true);
 	void save(NET_Packet& net_packet);
+	// seamless world experiment (kt): the objects of the levels standing next to the base one live in
+	// the world's coordinates and node numbers, and are written to a save in their own level's
+	void kt_move_objects(bool to_world);
 };
 
 #include "alife_storage_manager_inline.h"

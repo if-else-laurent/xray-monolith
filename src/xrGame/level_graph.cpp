@@ -87,6 +87,7 @@ void CLevelGraph::kt_merge_chunk()
 		hdrNODES H;
 		const NodeCompressed* N;
 		Fvector offset;
+		int chunk;
 	};
 	struct local
 	{
@@ -121,11 +122,13 @@ void CLevelGraph::kt_merge_chunk()
 			FS.update_path(file, "$game_levels$", g_kt_chunk.pieces[n].name);
 			xr_strcat(file, "\\level.ai");
 			piece.offset = g_kt_chunk.pieces[n].offset;
+			piece.chunk = int(n);
 		}
 		else
 		{
 			FS.update_path(file, "$game_levels$", *g_kt_chunk.ai_pieces[n - chunk_count]);
 			piece.offset.set(0, 0, 0);
+			piece.chunk = -1;
 		}
 		if (!FS.exist(file))
 		{
@@ -310,6 +313,14 @@ void CLevelGraph::kt_merge_chunk()
 				front.swap(next);
 			}
 		}
+		m_kt_ranges.clear();
+		for (u32 n = 0, at = 0; n < pieces.size(); at += pieces[n].H.count, n++)
+		{
+			KtRange range = {pieces[n].chunk, at, pieces[n].H.count};
+			m_kt_ranges.push_back(range);
+		}
+		m_kt_place.swap(place);
+		m_kt_order.swap(order);
 		m_kt_storage = storage;
 		m_kt_own_count = H1.count;
 		m_header = (CHeader*)storage;

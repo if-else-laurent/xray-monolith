@@ -46,6 +46,14 @@ public:
 	CPatrolPoint& load_raw(const CLevelGraph* level_graph, const CGameLevelCrossTable* cross, const CGameGraph* game_graph, IReader& stream);
 	CPatrolPoint& load_from_config(CInifile* ini_paths, LPCSTR patrol_name, LPCSTR point_name);
 	void set_lvid_from_position(const CLevelGraph* level_graph);
+	// seamless world experiment (kt): the point of a level standing next to the base one moves into the world
+	void kt_move(const Fvector& offset, u32 level_vertex_id)
+	{
+		m_position.add(offset);
+		m_level_vertex_id = level_vertex_id;
+	}
+	u32 kt_level_vertex_id() const { return m_level_vertex_id; }
+	GameGraph::_GRAPH_ID kt_game_vertex_id() const { return m_game_vertex_id; }
 	IC const Fvector& position() const;
 	IC const u32& level_vertex_id(const CLevelGraph* level_graph, const CGameLevelCrossTable* cross, const CGameGraph* game_graph) const;
 	IC const GameGraph::_GRAPH_ID& game_vertex_id(const CLevelGraph* level_graph, const CGameLevelCrossTable* cross, const CGameGraph* game_graph) const;

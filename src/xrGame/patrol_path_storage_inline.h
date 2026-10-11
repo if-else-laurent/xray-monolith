@@ -10,6 +10,7 @@
 
 IC CPatrolPathStorage::CPatrolPathStorage()
 {
+	m_kt_placed = false;
 }
 
 IC const CPatrolPathStorage::PATROL_REGISTRY& CPatrolPathStorage::patrol_paths() const

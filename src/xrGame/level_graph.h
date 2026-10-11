@@ -261,7 +261,37 @@ public:
 	u32 kt_own_vertex_count() const { return m_kt_own_count; }
 	// for every added node: the node of this level it is reached from
 	const xr_vector<u32>& kt_like() const { return m_kt_like; }
+	// the number in the merged map of node `local` of chunk `chunk` (the order of -kt_chunk keys); u32(-1) if none
+	u32 kt_node(u32 chunk, u32 local) const
+	{
+		for (u32 i = 0; i < m_kt_ranges.size(); i++)
+			if (m_kt_ranges[i].chunk == int(chunk))
+				return local < m_kt_ranges[i].count ? m_kt_own_count + m_kt_place[m_kt_ranges[i].base + local] : u32(-1);
+		return u32(-1);
+	}
+	// and back: which chunk's node, and which one, is the merged map's node
+	bool kt_local(u32 merged, u32& chunk, u32& local) const
+	{
+		if (!m_kt_own_count || merged < m_kt_own_count || merged - m_kt_own_count >= m_kt_order.size()) return false;
+		const u32 added = m_kt_order[merged - m_kt_own_count];
+		for (u32 i = 0; i < m_kt_ranges.size(); i++)
+			if (added >= m_kt_ranges[i].base && added < m_kt_ranges[i].base + m_kt_ranges[i].count)
+			{
+				if (m_kt_ranges[i].chunk < 0) return false;
+				chunk = u32(m_kt_ranges[i].chunk);
+				local = added - m_kt_ranges[i].base;
+				return true;
+			}
+		return false;
+	}
 private:
+	struct KtRange
+	{
+		int chunk; // -1: a small piece of AI map of our own
+		u32 base, count; // among the added nodes in the order of their files
+	};
+	xr_vector<KtRange> m_kt_ranges;
+	xr_vector<u32> m_kt_place, m_kt_order;
 	void kt_merge_chunk();
 	u8* m_kt_storage;
 	u32 m_kt_own_count;

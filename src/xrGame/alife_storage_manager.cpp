@@ -22,6 +22,10 @@
 #include "string_table.h"
 #include "../xrEngine/igame_persistent.h"
 #include "autosave_manager.h"
+#include "ai_space.h"
+#include "game_graph.h"
+#include "level_graph.h"
+#include "../xrEngine/IGame_Level.h"
 //Alundaio
 #ifdef ENGINE_LUA_ALIFE_STORAGE_MANAGER_CALLBACKS
 #include "pch_script.h"
@@ -85,7 +89,9 @@ void CALifeStorageManager::save(LPCSTR save_name_no_check, bool update_name)
 		header().save(stream);
 		time_manager().save(stream);
 		spawns().save(stream);
+		kt_move_objects(false);
 		objects().save(stream);
+		kt_move_objects(true);
 		registry().save(stream);
 
 		source_count = stream.tell();
@@ -156,6 +162,7 @@ void CALifeStorageManager::load(void* buffer, const u32& buffer_size, LPCSTR fil
 	registry().load(source);
 
 	can_register_objects(true);
+	kt_move_objects(true);
 
 	for (I = B; I != E; ++I)
 		(*I).second->on_register();
@@ -164,6 +171,46 @@ void CALifeStorageManager::load(void* buffer, const u32& buffer_size, LPCSTR fil
 		return;
 
 	Level().autosave_manager().on_game_loaded();
+}
+
+void CALifeStorageManager::kt_move_objects(bool to_world)
+{
+	if (!ai().get_game_graph() || !ai().game_graph().kt_placed() || !ai().get_level_graph()) return;
+	const CGameGraph& game_graph = ai().game_graph();
+	const CLevelGraph& level_graph = ai().level_graph();
+	u32 moved = 0, lost = 0;
+	CALifeObjectRegistry::OBJECT_REGISTRY::iterator I = objects().objects().begin();
+	CALifeObjectRegistry::OBJECT_REGISTRY::iterator E = objects().objects().end();
+	for (; I != E; ++I)
+	{
+		CSE_ALifeDynamicObject* object = (*I).second;
+		const int chunk = game_graph.kt_chunk(object->m_tGraphID);
+		if (chunk < 0) continue;
+		const Fvector& offset = g_kt_chunk.pieces[chunk].offset;
+		moved++;
+		if (to_world)
+		{
+			object->o_Position.add(offset);
+			u32 node = level_graph.kt_node(u32(chunk), object->m_tNodeID);
+			if (node == u32(-1) && level_graph.valid_vertex_position(object->o_Position))
+				node = level_graph.vertex_id(object->o_Position);
+			if (!level_graph.valid_vertex_id(node)) lost++;
+			object->m_tNodeID = node;
+		}
+		else
+		{
+			object->o_Position.sub(offset);
+			u32 from, local;
+			if (level_graph.kt_local(object->m_tNodeID, from, local) && int(from) == chunk)
+				object->m_tNodeID = local;
+			else
+			{
+				object->m_tNodeID = u32(-1);
+				lost++;
+			}
+		}
+	}
+	Msg("* [kt world] %u objects moved %s, %u without a node", moved, to_world ? "into the world" : "back to their levels for the save", lost);
 }
 
 bool CALifeStorageManager::load(LPCSTR save_name_no_check)

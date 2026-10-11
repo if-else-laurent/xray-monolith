@@ -22,6 +22,7 @@ IC CGameGraph::CGameGraph									(LPCSTR file_name, u32 current_version)
 	temp							+= header().edge_count()*sizeof(CGameGraph::CEdge);
 	m_cross_tables					= (u32*)(((CLevelPoint*)temp) + header().death_point_count());
 	m_current_level_cross_table		= 0;
+	m_kt_nodes						= 0;
 }
 #endif // AI_COMPILER
 
@@ -37,10 +38,17 @@ IC CGameGraph::CGameGraph(const IReader& _stream)
 	temp += header().edge_count() * sizeof(CGameGraph::CEdge);
 	m_cross_tables = (u32*)(((CLevelPoint*)temp) + header().death_point_count());
 	m_current_level_cross_table = 0;
+	m_kt_nodes = 0;
+#ifdef XRGAME_EXPORTS
+	m_kt_placed = false;
+#endif
 }
 
 IC CGameGraph::~CGameGraph()
 {
+#ifndef AI_COMPILER
+	xr_free(m_kt_nodes);
+#endif
 	xr_delete(m_current_level_cross_table);
 #ifdef AI_COMPILER
 	FS.r_close					(m_reader);
