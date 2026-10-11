@@ -59,7 +59,9 @@ public:
 // Only its static geometry and its collision mesh are taken; no AI map, no objects, no details.
 struct ENGINE_API KtChunk
 {
-	bool active; // asked for and found
+	bool configured; // asked for on the command line and found
+	bool active; // and the level being played is the one it is to stand next to
+	string64 base; // -kt_chunk_base <level>: the only level the chunk is added to; empty - any
 	bool loading; // the renderer is reading the chunk's files right now
 	string64 name;
 	Fvector offset;
@@ -81,16 +83,19 @@ struct ENGINE_API KtChunk
 		return false;
 	}
 
-	KtChunk() : active(false), loading(false), tri_base(0), tri_count(0)
+	KtChunk() : configured(false), active(false), loading(false), tri_base(0), tri_count(0)
 	{
 		name[0] = 0;
+		base[0] = 0;
 		offset.set(0, 0, 0);
 	}
 };
 
 extern ENGINE_API KtChunk g_kt_chunk;
-// Reads the key anew. The AI map is loaded before the level itself, so both ask.
-ENGINE_API void kt_chunk_setup();
+// Is the chunk to be added to the level that is being loaded now. Reads the keys on the first call.
+// The AI map is read on its own thread next to the level, so it asks by itself and does not look at
+// g_kt_chunk.active, which the level sets for the rest of the game.
+ENGINE_API bool kt_chunk_wanted();
 
 class ENGINE_API IGame_Level :
 	public DLL_Pure,

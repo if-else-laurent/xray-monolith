@@ -41,8 +41,7 @@ CLevelGraph::CLevelGraph()
 #ifndef AI_COMPILER
 	m_kt_storage = 0;
 	m_kt_own_count = 0;
-	kt_chunk_setup();
-	if (g_kt_chunk.active)
+	if (kt_chunk_wanted())
 		kt_merge_chunk();
 #endif
 	m_row_length = iFloor((header().box().max.z - header().box().min.z) / header().cell_size() + EPS_L + 1.5f);

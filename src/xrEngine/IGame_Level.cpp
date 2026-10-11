@@ -20,7 +20,30 @@ ENGINE_API IGame_Level* g_pGameLevel = NULL;
 ENGINE_API KtChunk g_kt_chunk;
 
 // Reads -kt_chunk <level>,<x>,<y>,<z> and checks that the level has what is needed.
-ENGINE_API void kt_chunk_setup()
+// The keys do not change while the game runs, and the AI map is read on another thread at the same
+// time as the level, so they are read once, under a lock.
+static xrCriticalSection kt_setup_lock;
+static bool kt_setup_done = false;
+
+static void kt_chunk_setup();
+
+ENGINE_API bool kt_chunk_wanted()
+{
+	{
+		xrCriticalSectionGuard guard(kt_setup_lock);
+		if (!kt_setup_done) kt_chunk_setup();
+		kt_setup_done = true;
+	}
+	if (!g_kt_chunk.configured) return false;
+	if (!g_kt_chunk.base[0]) return true;
+	string_path level, wanted;
+	FS.update_path(level, "$level$", "");
+	strlwr(level);
+	strconcat(sizeof(wanted), wanted, "\\", g_kt_chunk.base, "\\");
+	return 0 != strstr(level, wanted);
+}
+
+static void kt_chunk_setup()
 {
 	g_kt_chunk = KtChunk();
 	LPCSTR key = strstr(Core.Params, "-kt_chunk ");
@@ -42,7 +65,12 @@ ENGINE_API void kt_chunk_setup()
 	}
 	xr_strcpy(g_kt_chunk.name, name);
 	g_kt_chunk.offset = offset;
-	g_kt_chunk.active = true;
+	g_kt_chunk.configured = true;
+	if (LPCSTR k = strstr(Core.Params, "-kt_chunk_base "))
+	{
+		sscanf(k + 15, "%63[^ ]", g_kt_chunk.base);
+		strlwr(g_kt_chunk.base);
+	}
 	Msg("* [kt chunk] level %s is added at %.2f, %.2f, %.2f", name, offset.x, offset.y, offset.z);
 
 	for (LPCSTR k = strstr(Core.Params, "-kt_cut "); k; k = strstr(k + 1, "-kt_cut "))
@@ -170,7 +198,7 @@ bool IGame_Level::Load(u32 dwNum)
 	// CForms
 	// g_pGamePersistent->LoadTitle ("st_loading_cform");
 	g_pGamePersistent->LoadTitle();
-	kt_chunk_setup();
+	g_kt_chunk.active = kt_chunk_wanted();
 	if (g_kt_chunk.active)
 	{
 		string_path chunk_cform;
