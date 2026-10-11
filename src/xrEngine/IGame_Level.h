@@ -75,6 +75,8 @@ struct ENGINE_API KtChunk
 };
 
 extern ENGINE_API KtChunk g_kt_chunk;
+// Reads the key anew. The AI map is loaded before the level itself, so both ask.
+ENGINE_API void kt_chunk_setup();
 
 class ENGINE_API IGame_Level :
 	public DLL_Pure,

@@ -20,7 +20,7 @@ ENGINE_API IGame_Level* g_pGameLevel = NULL;
 ENGINE_API KtChunk g_kt_chunk;
 
 // Reads -kt_chunk <level>,<x>,<y>,<z> and checks that the level has what is needed.
-static void kt_chunk_setup()
+ENGINE_API void kt_chunk_setup()
 {
 	g_kt_chunk = KtChunk();
 	LPCSTR key = strstr(Core.Params, "-kt_chunk ");
