@@ -394,6 +394,40 @@ the game starts, and four saves in a row were loaded from the running game.
 The block is rare and was not reproduced on purpose, so whether this ends it
 is known only as "not seen since".
 
+### 12. The device notice of Wine's DirectInput is waited for 100 ms at most
+
+With ReShade loaded the game stood still (process alive, no CPU) after being
+minimized and restored, four times on 2026-10-10 and 2026-10-11. The stacks,
+taken with Wine's own debugger (`winedbg`, `bt all`), show two threads waiting
+for each other:
+
+- the primary thread: `Present` -> ReShade (holds the lock of its input state)
+  -> `GetAsyncKeyState` -> Wine delivers a pending activation inside the call
+  -> the `WH_CBT` hook of `dinput8.dll` -> `SendMessageW(worker window,
+  WM_USER + 0x10, 1, 0)`, waits for the answer;
+- the worker thread of `dinput8.dll`: inside a message function hooked by
+  ReShade (raw input arrives at its window), waits for the same lock.
+
+The engine cannot stop either side from doing this, so it breaks the wait:
+at start (`dinput_notify_without_waiting` in `x_ray.cpp`, under Wine only) the
+import of `SendMessageW` in `dinput8.dll` is pointed at a wrapper that sends
+this one notice with `SendMessageTimeoutW` and 100 ms. The notice carries no
+data; on a timeout it stays in the queue and the worker handles it later.
+
+Not waiting at all (`SendNotifyMessageW`, the first version, `984f8d35`) hung
+the game at exit: `~CInput` calls `Unacquire`, then `Release`, which holds
+the lock of dinput8 while it tells the worker to stop, and the worker, having
+only then got to the queued notice, waited for that lock. The same can still
+happen if a timeout falls right before the exit; not seen.
+
+The log says `* DirectInput of Wine: the device refresh notice is waited for
+100 ms at most, imports replaced: 1` (-1: not Wine, nothing touched).
+
+Verified on 2026-10-11: with `984f8d35` the user minimized the game many
+times from the menu and from the level without a hang; with `16c7aadd` the
+exit passed twice (once by the agent with `quit`, once by the user through
+the menu). Minimizing with `16c7aadd` is being checked by the user in play.
+
 ## Building
 
 Workflow `.github/workflows/gamma-mt-fix.yml` ("GAMMA MT fix build"), based on
@@ -434,6 +468,8 @@ Installed builds so far:
 | 2026-10-10 | `7aefe68a` | a draw with a vertex shader that does not fit is skipped, exe md5 `57b5de1b…`; the previous files are kept as `.bak-2026-10-10d` |
 | 2026-10-11 | `c46bafcd` | a failed spawn does not break the map of space restrictions, exe md5 `7530499d…`; the previous files are kept as `.bak-2026-10-11` |
 | 2026-10-11 | `1fd36dd7` | one thread at a time in FlushProcessWriteBuffers, exe md5 `dcb0d114…`; the previous files are kept as `.bak-2026-10-11b` |
+| 2026-10-11 | `984f8d35` | the DirectInput notice of Wine is not waited for, exe md5 `b279191d…`; hung at exit, replaced the same day; the previous files are kept as `.bak-2026-10-11c` |
+| 2026-10-11 | `16c7aadd` | the DirectInput notice of Wine is waited for 100 ms at most, exe md5 `cea140df…`; the previous files are kept as `.bak-2026-10-11d` |
 
 The game log starts with the build date of the executable
 (`'xrCore' build …`, `Modded Exes MT-TEST version …`), which tells which
