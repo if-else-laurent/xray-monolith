@@ -54,7 +54,8 @@ protected:
 public:
 	// Main interface
 	dxRender_Visual* root() { return m_root; }
-	void kt_set_root(dxRender_Visual* V) { m_root = V; } // seamless world experiment: a sector of a chunk has no portals
+	void kt_set_root(dxRender_Visual* V) { m_root = V; kt_chunk = true; } // seamless world experiment: a sector of a chunk has no portals
+	bool kt_chunk = false; // a sector of a level standing next to this one
 	void traverse(CFrustum&& F, CDSGraphManager& DM);
 	void load(IReader& fs);
 

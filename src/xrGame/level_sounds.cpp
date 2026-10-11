@@ -173,6 +173,25 @@ void CLevelSoundManager::Load()
 		}
 		FS.r_close(F);
 	}
+	// seamless world experiment (kt): and of the levels standing next to this one
+	if (g_kt_chunk.active)
+		for (u32 n = 0; n < g_kt_chunk.pieces.size(); n++)
+		{
+			FS.update_path(fn, "$game_levels$", g_kt_chunk.pieces[n].name);
+			xr_strcat(fn, "\\level.snd_static");
+			if (!FS.exist(fn)) continue;
+			IReader* F = FS.r_open(fn);
+			u32 chunk = 0, count = 0;
+			for (IReader* OBJ = F->open_chunk_iterator(chunk); OBJ; OBJ = F->open_chunk_iterator(chunk, OBJ))
+			{
+				m_StaticSounds.push_back(SStaticSound());
+				m_StaticSounds.back().Load(*OBJ);
+				m_StaticSounds.back().m_Position.add(g_kt_chunk.pieces[n].offset);
+				count++;
+			}
+			FS.r_close(F);
+			Msg("* [kt world] %u static sounds of %s", count, g_kt_chunk.pieces[n].name);
+		}
 
 	// music
 	m_CurrentTrack = -1;

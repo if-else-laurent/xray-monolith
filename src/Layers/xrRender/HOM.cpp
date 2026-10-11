@@ -10,6 +10,7 @@
 #include "../../xrCore/profiler.h"
 
 #include "dxRenderDeviceRender.h"
+#include "../../xrEngine/IGame_Level.h"
 
 float psOSSR = .001f;
 
@@ -93,12 +94,21 @@ void CHOM::Load()
 
 	// Load tris and merge them
 	CDB::Collector CL;
+	u32 kt_dropped = 0;
 	while (!S->eof())
 	{
 		HOM_poly P;
 		S->r(&P, sizeof(P));
+		// seamless world experiment (kt): an occluder over the land given to a neighbour hides nothing there
+		if (g_kt_chunk.active && g_kt_chunk.cut(0, P.v1, P.v2, P.v3, true))
+		{
+			kt_dropped++;
+			continue;
+		}
 		CL.add_face_packed_D(P.v1, P.v2, P.v3, P.flags, 0.01f);
 	}
+
+	if (kt_dropped) Msg("* [kt chunk] occluders: %u triangles over the neighbours' land are dropped", kt_dropped);
 
 	// Determine adjacency
 	xr_vector<u32> adjacency;

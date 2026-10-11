@@ -519,7 +519,8 @@ void CDSGraphManager::r_dsgraph_capture_lights()
 		CSector* sector = (CSector*)spatial->spatial.sector;
 		if (0 == sector) continue;
 
-		if (!RImplementation.HOM.visible(spatial->spatial.sphere)) continue;
+		// seamless world experiment (kt): this level's occluders know nothing of the land next to it
+		if (!sector->kt_chunk && !RImplementation.HOM.visible(spatial->spatial.sphere)) continue;
 
 		if ((spatial->spatial.type & STYPE_LIGHTSOURCE))
 		{
@@ -622,7 +623,7 @@ void CDSGraphManager::r_dsgraph_capture_dynamic(CObject* O)
 				CSector* sector = (CSector*)spatial->spatial.sector;
 				if (0 == sector) continue;
 
-				if (i_mask[CDSGraphManager::fl_normal] && !RImplementation.HOM.visible(spatial->spatial.sphere))
+				if (i_mask[CDSGraphManager::fl_normal] && !sector->kt_chunk && !RImplementation.HOM.visible(spatial->spatial.sphere))
 					continue;
 
 #if	RENDER==R_R1

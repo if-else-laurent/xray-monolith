@@ -51,7 +51,22 @@ bool CLevel::Load_GameSpecific_After()
 	R_ASSERT(m_StaticParticles.empty());
 	// loading static particles
 	string_path fn_game;
-	if (FS.exist(fn_game, "$level$", "level.ps_static"))
+	// seamless world experiment (kt): pass 0 is this level, the next ones the levels standing next to it
+	const u32 kt_passes = g_kt_chunk.active ? 1 + u32(g_kt_chunk.pieces.size()) : 1;
+	for (u32 kt_pass = 0; kt_pass < kt_passes; kt_pass++)
+	{
+	Fvector kt_offset = {0.f, 0.f, 0.f};
+	bool kt_found;
+	if (kt_pass == 0)
+		kt_found = !!FS.exist(fn_game, "$level$", "level.ps_static");
+	else
+	{
+		FS.update_path(fn_game, "$game_levels$", g_kt_chunk.pieces[kt_pass - 1].name);
+		xr_strcat(fn_game, "\\level.ps_static");
+		kt_found = !!FS.exist(fn_game);
+		kt_offset = g_kt_chunk.pieces[kt_pass - 1].offset;
+	}
+	if (kt_found)
 	{
 		IReader* F = FS.r_open(fn_game);
 
@@ -81,6 +96,7 @@ bool CLevel::Load_GameSpecific_After()
 			OBJ->r_stringZ(ref_name, sizeof(ref_name));
 			OBJ->r(&transform, sizeof(Fmatrix));
 			transform.c.y += 0.01f;
+			transform.c.add(kt_offset);
 
 
 			if ((g_pGamePersistent->m_game_params.m_e_game_type & EGameIDs(gametype_usage)) || (ver == 0))
@@ -92,6 +108,7 @@ bool CLevel::Load_GameSpecific_After()
 			}
 		}
 		FS.r_close(F);
+	}
 	}
 
 	if (!g_dedicated_server)

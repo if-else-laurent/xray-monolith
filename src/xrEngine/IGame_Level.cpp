@@ -262,6 +262,8 @@ bool IGame_Level::Load(u32 dwNum)
 	g_kt_chunk.active = kt_chunk_wanted();
 	if (g_kt_chunk.active)
 	{
+		CTimer kt_timer;
+		kt_timer.Start();
 		xr_vector<KtCform> cforms(g_kt_chunk.pieces.size());
 		for (u32 i = 0; i < cforms.size(); i++)
 		{
@@ -288,6 +290,7 @@ bool IGame_Level::Load(u32 dwNum)
 			g_kt_chunk.pieces[i].tri_count = cforms[i].tri_count;
 			Msg("* [kt chunk] collision of %s: triangles %u..%u of the static model", g_kt_chunk.pieces[i].name, cforms[i].tri_base, cforms[i].tri_base + cforms[i].tri_count);
 		}
+		Msg("* [kt time] collisions of the level and %u pieces: %u ms", u32(cforms.size()), kt_timer.GetElapsed_ms());
 	}
 	else
 	ObjectSpace.Load( [](Fvector* V, int Vcnt, CDB::TRI* T, int Tcnt, void* params){g_pGameLevel->Load_GameSpecific_CFORM(T, Tcnt);});

@@ -103,6 +103,8 @@ void CLevelGraph::kt_merge_chunk()
 		}
 	};
 
+	CTimer kt_timer;
+	kt_timer.Start();
 	hdrNODES H1;
 	CopyMemory(&H1, m_header, sizeof(hdrNODES));
 	const NodeCompressed* N1 = (const NodeCompressed*)(void*)m_nodes;
@@ -327,6 +329,7 @@ void CLevelGraph::kt_merge_chunk()
 		m_nodes = (CVertex*)(void*)NM;
 		Msg("* [kt chunk] AI map: %u nodes of the level and %u added (%u files) in %u x %u cells, %u links across the borders",
 		    H1.count, extra, u32(pieces.size()), column, row, stitched);
+		Msg("* [kt time] AI map merged: %u ms", kt_timer.GetElapsed_ms());
 	}
 	for (u32 n = 0; n < pieces.size(); n++) FS.r_close(pieces[n].reader);
 }

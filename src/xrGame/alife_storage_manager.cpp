@@ -25,6 +25,7 @@
 #include "ai_space.h"
 #include "game_graph.h"
 #include "level_graph.h"
+#include "game_level_cross_table.h"
 #include "../xrEngine/IGame_Level.h"
 //Alundaio
 #ifdef ENGINE_LUA_ALIFE_STORAGE_MANAGER_CALLBACKS
@@ -184,6 +185,19 @@ void CALifeStorageManager::kt_move_objects(bool to_world)
 	for (; I != E; ++I)
 	{
 		CSE_ALifeDynamicObject* object = (*I).second;
+		// An object that is online keeps on the server the vertex and node it went online with,
+		// however far it has walked since. Which level's coordinates it is saved in is told by the
+		// vertex, so the vertex is brought up to the place first.
+		if (!to_world && object->m_bOnline && object->ID_Parent == 0xffff && object->used_ai_locations() &&
+			level_graph.valid_vertex_position(object->o_Position))
+		{
+			const u32 node = level_graph.vertex_id(object->o_Position);
+			if (level_graph.valid_vertex_id(node))
+			{
+				object->m_tNodeID = node;
+				object->m_tGraphID = ai().cross_table().vertex(node).game_vertex_id();
+			}
+		}
 		const int chunk = game_graph.kt_chunk(object->m_tGraphID);
 		if (chunk < 0) continue;
 		const Fvector& offset = g_kt_chunk.pieces[chunk].offset;

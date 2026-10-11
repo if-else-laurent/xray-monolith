@@ -110,7 +110,12 @@ void CRender::level_Load(IReader* fs)
 	// Seamless world experiment (kt): the static geometry of one more level, shifted
 	if (g_kt_chunk.active && !g_dedicated_server)
 		for (u32 piece = 0; piece < g_kt_chunk.pieces.size(); piece++)
+		{
+			CTimer kt_timer;
+			kt_timer.Start();
 			kt_LoadChunk(piece);
+			Msg("* [kt time] render of %s: %u ms", g_kt_chunk.pieces[piece].name, kt_timer.GetElapsed_ms());
+		}
 
 	// 3D Fluid
 	Load3DFluid();
