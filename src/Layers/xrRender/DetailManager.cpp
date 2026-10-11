@@ -81,7 +81,6 @@ void CDetailManager::SSwingValue::lerp(const SSwingValue& A, const SSwingValue& 
 CDetailManager::CDetailManager()
 {
 	dtFS = 0;
-	kt_fs = 0;
 	dtSlots = 0;
 	soft_Geom = 0;
 	hw_Geom = 0;
@@ -221,32 +220,32 @@ void CDetailManager::Load()
 	dtSlots = (DetailSlot*)m_slots->pointer();
 	m_slots->close();
 
-	// Seamless world experiment (kt): the grass of the first extra level that has any. Its models go
-	// after the level's own; a slot can name 63 models at most, so both sets must fit together.
-	kt_fs = 0;
+	// Seamless world experiment (kt): the grass of the extra levels. Their models go after the
+	// level's own; a slot can name 63 models at most, so all the sets must fit together.
+	kt_grass.clear();
 	if (g_kt_chunk.active)
-		for (u32 piece = 0; piece < g_kt_chunk.pieces.size() && !kt_fs; piece++)
+		for (u32 piece = 0; piece < g_kt_chunk.pieces.size(); piece++)
 		{
 			string_path file;
 			FS.update_path(file, "$game_levels$", g_kt_chunk.pieces[piece].name);
 			xr_strcat(file, "\\level.details");
 			if (!FS.exist(file)) continue;
-			IReader* R = FS.r_open(file);
-			R->r_chunk_safe(0, &kt_H, sizeof(kt_H));
-			if (kt_H.version != DETAIL_VERSION || objects.size() + kt_H.object_count >= u32(DetailSlot::ID_Empty))
+			KtGrass G;
+			G.fs = FS.r_open(file);
+			G.fs->r_chunk_safe(0, &G.H, sizeof(G.H));
+			if (G.H.version != DETAIL_VERSION || objects.size() + G.H.object_count >= u32(DetailSlot::ID_Empty))
 			{
-				Msg("! [kt chunk] grass of %s is left out: %u models and %u of the level do not fit 63", g_kt_chunk.pieces[piece].name, kt_H.object_count, u32(objects.size()));
-				FS.r_close(R);
+				Msg("! [kt chunk] grass of %s is left out: %u models and %u already there do not fit 63", g_kt_chunk.pieces[piece].name, G.H.object_count, u32(objects.size()));
+				FS.r_close(G.fs);
 				continue;
 			}
-			kt_fs = R;
-			kt_piece = piece;
-			kt_offset = g_kt_chunk.pieces[piece].offset;
-			kt_id_base = u32(objects.size());
+			G.piece = piece;
+			G.offset = g_kt_chunk.pieces[piece].offset;
+			G.id_base = u32(objects.size());
 			g_kt_chunk.select(piece);
 			g_kt_chunk.loading = true; // the models' texture is the level's own atlas: named by the piece
-			IReader* models = kt_fs->open_chunk(1);
-			for (u32 m_id = 0; m_id < kt_H.object_count; m_id++)
+			IReader* models = G.fs->open_chunk(1);
+			for (u32 m_id = 0; m_id < G.H.object_count; m_id++)
 			{
 				CDetail* dt = xr_new<CDetail>();
 				IReader* S = models->open_chunk(m_id);
@@ -256,10 +255,11 @@ void CDetailManager::Load()
 			}
 			models->close();
 			g_kt_chunk.loading = false;
-			IReader* slots = kt_fs->open_chunk(2);
-			kt_slots = (DetailSlot*)slots->pointer();
+			IReader* slots = G.fs->open_chunk(2);
+			G.slots = (DetailSlot*)slots->pointer();
 			slots->close();
-			Msg("* [kt chunk] grass of %s: %u models, %u x %u slots", g_kt_chunk.pieces[piece].name, kt_H.object_count, kt_H.size_x, kt_H.size_z);
+			kt_grass.push_back(G);
+			Msg("* [kt chunk] grass of %s: %u models, %u x %u slots", g_kt_chunk.pieces[piece].name, G.H.object_count, G.H.size_x, G.H.size_z);
 		}
 
 	// Initialize 'vis' and 'cache'
@@ -315,8 +315,8 @@ void CDetailManager::Unload()
 	m_visibles[2].clear();
 	FS.r_close(dtFS);
 	dtFS = 0;
-	if (kt_fs) FS.r_close(kt_fs);
-	kt_fs = 0;
+	for (u32 i = 0; i < kt_grass.size(); i++) FS.r_close(kt_grass[i].fs);
+	kt_grass.clear();
 }
 
 extern ECORE_API float r_ssaDISCARD;

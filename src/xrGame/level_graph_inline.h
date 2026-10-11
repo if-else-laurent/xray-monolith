@@ -601,7 +601,7 @@ IC bool CLevelGraph::valid_vertex_position(const Fvector& position) const
 	if (!(iFloor((position.x - box->min.x) / header().cell_size() + .5f) < (int)m_column_length))
 		return (false);
 
-	return ((vertex_position(position).xz() < (1 << MAX_NODE_BIT_COUNT) - 1));
+	return ((vertex_position(position).xz() < KT_MAX_CELL));
 }
 
 

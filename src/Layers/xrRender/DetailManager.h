@@ -176,13 +176,18 @@ public:
 	IReader* dtFS;
 	DetailHeader dtH;
 	DetailSlot* dtSlots; // note: pointer into VFS
-	// Seamless world experiment (kt): the grass of one extra level, shown on its land
-	IReader* kt_fs;
-	DetailHeader kt_H;
-	DetailSlot* kt_slots;
-	u32 kt_id_base; // its models follow the level's own in `objects`
-	u32 kt_piece;
-	Fvector kt_offset;
+	// Seamless world experiment (kt): the grass of the extra levels, each shown on its land
+	struct KtGrass
+	{
+		IReader* fs;
+		DetailHeader H;
+		DetailSlot* slots;
+		u32 id_base; // its models follow the level's own in `objects`
+		u32 piece;
+		Fvector offset;
+	};
+	xr_vector<KtGrass> kt_grass;
+	bool kt_slot(const KtGrass& G, float wx, float wz, DetailSlot& DS);
 	DetailSlot DS_empty;
 
 public:

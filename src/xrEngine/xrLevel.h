@@ -383,6 +383,8 @@ const u32 XRCL_CURRENT_VERSION = 18; //17; // input
 const u32 XRCL_PRODUCTION_VERSION = 14; // output
 const u32 CFORM_CURRENT_VERSION = 4;
 const u32 MAX_NODE_BIT_COUNT = 23;
+// kt: a node keeps the number of its grid cell in three bytes; the 23 bits above are the limit of node numbers
+const u32 KT_MAX_CELL = 0x00ffffff;
 const u32 XRAI_CURRENT_VERSION = 10;
 
 #endif // xrLevelH

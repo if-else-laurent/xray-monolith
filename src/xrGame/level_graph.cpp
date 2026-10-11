@@ -163,7 +163,7 @@ void CLevelGraph::kt_merge_chunk()
 	const u32 row = local::rows(HM);
 	const u32 column = u32(iFloor((HM.aabb.max.x - HM.aabb.min.x) / cell + EPS_L + 1.5f));
 
-	if (ok && (HM.count >= invalid || u64(row) * column >= u64(invalid)))
+	if (ok && (HM.count >= invalid || u64(row) * column >= u64(KT_MAX_CELL)))
 	{
 		Msg("! [kt chunk] AI map: the levels do not fit the limits together: %u nodes, %u x %u cells", HM.count, column, row);
 		ok = false;

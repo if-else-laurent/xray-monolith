@@ -234,61 +234,56 @@ void CDetailManager::cache_Update(int v_x, int v_z, Fvector& view, int limit)
 	}
 }
 
+// kt: the slot of an extra level's grass that covers the world point; false when it has none there
+bool CDetailManager::kt_slot(const KtGrass& G, float wx, float wz, DetailSlot& DS)
+{
+	int db_x = iFloor((wx - G.offset.x) / dm_slot_size) + G.H.offs_x;
+	int db_z = iFloor((wz - G.offset.z) / dm_slot_size) + G.H.offs_z;
+	if (!((db_x >= 0) && (db_x < int(G.H.size_x)) && (db_z >= 0) && (db_z < int(G.H.size_z)))) return false;
+	DS = G.slots[db_z * G.H.size_x + db_x];
+	if ((DS.id0 == DetailSlot::ID_Empty) && (DS.id1 == DetailSlot::ID_Empty) && (DS.id2 == DetailSlot::ID_Empty) && (DS.id3 == DetailSlot::ID_Empty)) return false;
+	for (u32 i = 0; i < 4; i++)
+		if (DS.r_id(i) != DetailSlot::ID_Empty) DS.w_id(i, u8(DS.r_id(i) + G.id_base));
+	DS.w_y(DS.r_ybase() + G.offset.y, DS.r_yheight() + .3f);
+	return true;
+}
+
 DetailSlot& CDetailManager::QueryDB(int sx, int sz)
 {
-	// Seamless world experiment (kt): on the extra level's land its own grass is shown. The slot is
+	// Seamless world experiment (kt): on an extra level's land its own grass is shown. The slot is
 	// taken from its file at the place this world slot covers there, its models renumbered and its
-	// height moved with the level. The two grids of slots do not coincide, so the grass lies up to a
+	// height moved with the level. The grids of slots do not coincide, so the grass lies up to a
 	// metre off its place; it is seated on the ground by a ray anyway.
-	if (kt_fs)
+	if (!kt_grass.empty())
 	{
+		static thread_local DetailSlot DS;
 		const float wx = (float(sx) + .5f) * dm_slot_size, wz = (float(sz) + .5f) * dm_slot_size;
 		const u8 cell = g_kt_chunk.mask_at(wx, wz);
-		bool theirs = (cell != 255) && (u32(cell & 0x7f) == kt_piece + 1);
-		if (cell == 255)
+		const u32 owner = (cell == 255) ? 0 : u32(cell & 0x7f);
+		if (owner != 0)
 		{
-			// no mask: theirs where the level has no grass of its own
-			int db_x = sx + dtH.offs_x, db_z = sz + dtH.offs_z;
-			theirs = !((db_x >= 0) && (db_x < int(dtH.size_x)) && (db_z >= 0) && (db_z < int(dtH.size_z)));
-			if (!theirs)
-			{
-				DetailSlot& own = dtSlots[db_z * dtH.size_x + db_x];
-				theirs = (own.id0 == DetailSlot::ID_Empty) && (own.id1 == DetailSlot::ID_Empty) && (own.id2 == DetailSlot::ID_Empty) && (own.id3 == DetailSlot::ID_Empty);
-			}
-		}
-		if (theirs)
-		{
-			static thread_local DetailSlot DS;
-			int db_x = iFloor((wx - kt_offset.x) / dm_slot_size) + kt_H.offs_x;
-			int db_z = iFloor((wz - kt_offset.z) / dm_slot_size) + kt_H.offs_z;
-			if ((db_x >= 0) && (db_x < int(kt_H.size_x)) && (db_z >= 0) && (db_z < int(kt_H.size_z)))
-			{
-				DS = kt_slots[db_z * kt_H.size_x + db_x];
-				for (u32 i = 0; i < 4; i++)
-					if (DS.r_id(i) != DetailSlot::ID_Empty) DS.w_id(i, u8(DS.r_id(i) + kt_id_base));
-				DS.w_y(DS.r_ybase() + kt_offset.y, DS.r_yheight() + .3f);
-			}
-			else
-			{
-				DS.w_id(0, DetailSlot::ID_Empty);
-				DS.w_id(1, DetailSlot::ID_Empty);
-				DS.w_id(2, DetailSlot::ID_Empty);
-				DS.w_id(3, DetailSlot::ID_Empty);
-			}
+			// the mask gives the place to an extra level: its grass or none
+			for (u32 i = 0; i < kt_grass.size(); i++)
+				if (kt_grass[i].piece + 1 == owner && kt_slot(kt_grass[i], wx, wz, DS)) return DS;
+			DS.w_id(0, DetailSlot::ID_Empty);
+			DS.w_id(1, DetailSlot::ID_Empty);
+			DS.w_id(2, DetailSlot::ID_Empty);
+			DS.w_id(3, DetailSlot::ID_Empty);
 			return DS;
 		}
-		else if (cell != 255 && (cell & 0x7f) != 0)
+		// the level's own land, or nobody's: an extra level's grass only where the level has none
+		// and the mask does not know that level (a level joined through a tunnel)
+		int own_x = sx + dtH.offs_x, own_z = sz + dtH.offs_z;
+		bool bare = !((own_x >= 0) && (own_x < int(dtH.size_x)) && (own_z >= 0) && (own_z < int(dtH.size_z)));
+		if (!bare)
 		{
-			// somebody else's land: no grass of the level's own there
-			static thread_local DetailSlot DS_none;
-			DS_none.w_id(0, DetailSlot::ID_Empty);
-			DS_none.w_id(1, DetailSlot::ID_Empty);
-			DS_none.w_id(2, DetailSlot::ID_Empty);
-			DS_none.w_id(3, DetailSlot::ID_Empty);
-			return DS_none;
+			DetailSlot& own = dtSlots[own_z * dtH.size_x + own_x];
+			bare = (own.id0 == DetailSlot::ID_Empty) && (own.id1 == DetailSlot::ID_Empty) && (own.id2 == DetailSlot::ID_Empty) && (own.id3 == DetailSlot::ID_Empty);
 		}
+		if (bare)
+			for (u32 i = 0; i < kt_grass.size(); i++)
+				if (kt_grass[i].piece + 1 >= g_kt_chunk.mask_pieces && kt_slot(kt_grass[i], wx, wz, DS)) return DS;
 	}
-
 	int db_x = sx + dtH.offs_x;
 	int db_z = sz + dtH.offs_z;
 	if ((db_x >= 0) && (db_x < int(dtH.size_x)) && (db_z >= 0) && (db_z < int(dtH.size_z)))
