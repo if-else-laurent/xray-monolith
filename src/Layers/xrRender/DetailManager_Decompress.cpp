@@ -232,7 +232,11 @@ RDEVICE.Statistic->TEST0.End		();
 				if (RImplementation.pOutdoorSector)
 				{
 					CSector* sector = (CSector*)RImplementation.getSector(T.sector);
-					if (sector != RImplementation.pOutdoorSector)
+					// seamless world experiment (kt): the ground of an extra level lies in its own sectors
+					bool kt_theirs = false;
+					for (void* extra : g_kt_chunk.sectors)
+						if (extra == (void*)sector) kt_theirs = true;
+					if (sector != RImplementation.pOutdoorSector && !kt_theirs)
 					{
 						no_push = true;
 						break;
