@@ -97,14 +97,35 @@ struct ENGINE_API KtChunk
 		return false;
 	}
 
-	bool cut(const Fvector& a, const Fvector& b, const Fvector& c) const
+	// -kt_mask <file under $game_levels$>: whose land is where. A grid over the world; a cell names the
+	// one piece that may have geometry there (0 the level, 1.. the chunks in the order of the keys,
+	// 255 anyone). Two levels put side by side overlap with the hills beyond their edges; the mask
+	// gives every place to the level that is walked there. Pieces beyond `mask_pieces` (connectors of
+	// our own) are not touched.
+	float mask_x0, mask_z0, mask_cell;
+	u32 mask_nx, mask_nz, mask_pieces;
+	xr_vector<u8> mask;
+
+	bool foreign(u32 piece, float x, float z) const
+	{
+		if (mask.empty() || piece >= mask_pieces) return false;
+		int ix = iFloor((x - mask_x0) / mask_cell), iz = iFloor((z - mask_z0) / mask_cell);
+		if (ix < 0 || iz < 0 || ix >= int(mask_nx) || iz >= int(mask_nz)) return false;
+		u8 owner = mask[u32(iz) * mask_nx + u32(ix)];
+		return owner != 255 && owner != piece;
+	}
+	// the piece whose files are being read by the renderer: 0 the level, 1.. the chunks
+	u32 reading() const { return loading ? current + 1 : 0; }
+
+	// Is the triangle of the piece left out: wholly inside a cut box or wholly on another piece's land.
+	bool cut(u32 piece, const Fvector& a, const Fvector& b, const Fvector& c) const
 	{
 		for (u32 i = 0; i < cuts.size(); i++)
 			if (cuts[i].contains(a) && cuts[i].contains(b) && cuts[i].contains(c)) return true;
-		return false;
+		return foreign(piece, a.x, a.z) && foreign(piece, b.x, b.z) && foreign(piece, c.x, c.z);
 	}
 
-	KtChunk() : configured(false), active(false), loading(false), current(0)
+	KtChunk() : configured(false), active(false), loading(false), current(0), mask_x0(0), mask_z0(0), mask_cell(1), mask_nx(0), mask_nz(0), mask_pieces(0)
 	{
 		name[0] = 0;
 		base[0] = 0;

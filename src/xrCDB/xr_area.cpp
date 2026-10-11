@@ -128,7 +128,7 @@ void CObjectSpace::Load(IReader* F, CDB::build_callback build_callback)
 	});
 }
 
-void CObjectSpace::LoadWithChunks(CDB::build_callback build_callback, xr_vector<KtCform>& chunks, const xr_vector<Fbox>& cuts)
+void CObjectSpace::LoadWithChunks(CDB::build_callback build_callback, xr_vector<KtCform>& chunks, bool (*cut)(u32 piece, const Fvector& a, const Fvector& b, const Fvector& c))
 {
 	IReader* F = FS.r_open("$level$", "level.cform");
 	R_ASSERT(F);
@@ -158,22 +158,13 @@ void CObjectSpace::LoadWithChunks(CDB::build_callback build_callback, xr_vector<
 	}
 
 	// One model for all: the vertices of a chunk are shifted, its triangles point at them.
-	// A triangle wholly inside a cut box is left out: a doorway where a wall closed the level.
-	struct local
-	{
-		static bool cut(const xr_vector<Fbox>& cuts, const Fvector* V, const CDB::TRI& T)
-		{
-			for (u32 c = 0; c < cuts.size(); c++)
-				if (cuts[c].contains(V[T.verts[0]]) && cuts[c].contains(V[T.verts[1]]) && cuts[c].contains(V[T.verts[2]])) return true;
-			return false;
-		}
-	};
+	// A triangle the experiment cuts out (a doorway, another level's land) is left out.
 	Fvector* all_verts = xr_alloc<Fvector>(vert_count);
 	CDB::TRI* all_tris = xr_alloc<CDB::TRI>(tri_count);
 	CopyMemory(all_verts, verts, H.vertcount * sizeof(Fvector));
 	u32 kept = 0;
 	for (u32 i = 0; i < H.facecount; i++)
-		if (!local::cut(cuts, all_verts, tris[i])) all_tris[kept++] = tris[i];
+		if (!cut(0, all_verts[tris[i].verts[0]], all_verts[tris[i].verts[1]], all_verts[tris[i].verts[2]])) all_tris[kept++] = tris[i];
 	u32 dropped = H.facecount - kept;
 	u32 vert_base = H.vertcount;
 	for (u32 c = 0; c < chunks.size(); c++)
@@ -189,7 +180,7 @@ void CObjectSpace::LoadWithChunks(CDB::build_callback build_callback, xr_vector<
 			T.verts[0] += vert_base;
 			T.verts[1] += vert_base;
 			T.verts[2] += vert_base;
-			if (!local::cut(cuts, all_verts, T)) all_tris[kept++] = T;
+			if (!cut(c + 1, all_verts[T.verts[0]], all_verts[T.verts[1]], all_verts[T.verts[2]])) all_tris[kept++] = T;
 			else dropped++;
 		}
 		chunks[c].tri_count = kept - chunks[c].tri_base;

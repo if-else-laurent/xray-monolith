@@ -27,6 +27,7 @@ dxRender_Visual::dxRender_Visual()
 {
 	Type = 0;
 	kt_chunk = false;
+	kt_hidden = false;
 	shader = 0;
 	vis.clear();
 }

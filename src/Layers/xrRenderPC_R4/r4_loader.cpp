@@ -226,6 +226,7 @@ struct kt_kept_vb
 	u32 stride, position, count;
 };
 static xr_vector<kt_kept_vb> kt_kept;
+static u32 kt_cut_total = 0;
 
 void CRender::LoadBuffers(CStreamReader* base_fs, BOOL _alternative)
 {
@@ -361,11 +362,11 @@ void CRender::LoadBuffers(CStreamReader* base_fs, BOOL _alternative)
 					const Fvector& a = *(const Fvector*)(K.data + (R.vbase + idx[t]) * K.stride + K.position);
 					const Fvector& b = *(const Fvector*)(K.data + (R.vbase + idx[t + 1]) * K.stride + K.position);
 					const Fvector& c = *(const Fvector*)(K.data + (R.vbase + idx[t + 2]) * K.stride + K.position);
-					if (!g_kt_chunk.cut(a, b, c)) continue;
+					if (!g_kt_chunk.cut(g_kt_chunk.reading(), a, b, c)) continue;
 					idx[t + 1] = idx[t + 2] = idx[t];
 					dropped++;
 				}
-				if (dropped) Msg("* [kt chunk] cut: %u triangles of a visual are not drawn (%s buffers)", dropped, _alternative ? "fast" : "main");
+				kt_cut_total += dropped;
 			}
 			dx10BufferUtils::CreateIndexBuffer(&_IB[i], pData, iCount * 2);
 			xr_free(pData);
@@ -376,6 +377,8 @@ void CRender::LoadBuffers(CStreamReader* base_fs, BOOL _alternative)
 	}
 	for (u32 n = 0; n < kt_kept.size(); n++) xr_free(kt_kept[n].data);
 	kt_kept.clear();
+	if (kt_cut_total) Msg("* [kt chunk] cut: %u triangles are not drawn (%s buffers)", kt_cut_total, _alternative ? "fast" : "main");
+	kt_cut_total = 0;
 }
 
 // kt: remembers where the geometry of the chunk's trees lies.
@@ -422,7 +425,8 @@ void CRender::kt_LocalScan(IReader* fs)
 void CRender::kt_CutScan(IReader* fs)
 {
 	kt_cut_ranges.clear();
-	if (g_kt_chunk.cuts.empty() || !fs) return;
+	const bool masked = g_kt_chunk.reading() < g_kt_chunk.mask_pieces && !g_kt_chunk.mask.empty();
+	if ((g_kt_chunk.cuts.empty() && !masked) || !fs) return;
 	IReader* V = 0;
 	for (u32 index = 0; (V = fs->open_chunk(index)) != 0; index++)
 	{
@@ -437,7 +441,8 @@ void CRender::kt_CutScan(IReader* fs)
 				box.min.add(g_kt_chunk.offset);
 				box.max.add(g_kt_chunk.offset);
 			}
-			bool touched = false;
+			// under a mask every piece of plain geometry is looked through; trees are hidden whole
+			bool touched = masked && H.type != MT_TREE_ST && H.type != MT_TREE_PM;
 			for (u32 c = 0; c < g_kt_chunk.cuts.size(); c++)
 				if (box.intersect(g_kt_chunk.cuts[c])) touched = true;
 			if (touched)

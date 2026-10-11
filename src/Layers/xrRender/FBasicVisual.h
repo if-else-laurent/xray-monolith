@@ -64,6 +64,7 @@ public:
 public:
 	// Common data for rendering
 	u32 Type; // visual's type
+	bool kt_hidden; // seamless world experiment: stands on another piece's land (a tree, a LOD), not drawn
 	bool kt_chunk; // seamless world experiment: belongs to the extra level, the occluders of this level do not hide it
 	vis_data vis; // visibility-data
 	ref_shader shader; // pipe state, shared

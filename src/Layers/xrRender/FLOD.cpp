@@ -33,6 +33,7 @@ void FLOD::Load(LPCSTR N, IReader* data, u32 dwFlags)
 {
 	inherited::Load(N, data, dwFlags);
 
+	if (g_kt_chunk.active) kt_hidden = g_kt_chunk.foreign(g_kt_chunk.reading(), vis.sphere.P.x, vis.sphere.P.z); // seamless world experiment (kt)
 	// LOD-def
 	R_ASSERT(data->find_chunk(OGF_LODDEF2));
 	for (int f = 0; f < 8; f++)

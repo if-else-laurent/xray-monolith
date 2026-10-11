@@ -530,7 +530,7 @@ void CDSGraphManager::add_leafs_Dynamic(xr_vector<IRenderVisual*>& children, Fma
 void CDSGraphManager::add_Static(IRenderVisual* piVisual, CFrustum& frustum, u32 planes)
 {
 	dxRender_Visual* pVisual = (dxRender_Visual*)piVisual;
-	if (!pVisual) return;
+	if (!pVisual || pVisual->kt_hidden) return;
 
 	Flags16& flags = piVisual->flags;
 	if (!i_mask[CDSGraphManager::fl_normal] && !!flags.test(IRenderVisualFlags::eNoShadow))
@@ -605,7 +605,7 @@ void CDSGraphManager::add_Static_MultiFrustum(IRenderVisual* piVisual, const xr_
 	constexpr u32 FULLY_VISIBLE_MASK = u32(-1);
 
 	dxRender_Visual* pVisual = (dxRender_Visual*)piVisual;
-	if (!pVisual) return;
+	if (!pVisual || pVisual->kt_hidden) return;
 
 	Flags16& flags = piVisual->flags;
 	if (!i_mask[CDSGraphManager::fl_normal] && !!flags.test(IRenderVisualFlags::eNoShadow))
@@ -712,6 +712,7 @@ void CDSGraphManager::add_Static_MultiFrustum(IRenderVisual* piVisual, const xr_
 
 void CDSGraphManager::add_leaf_Static(dxRender_Visual* pVisual)
 {
+	if (pVisual->kt_hidden) return; // seamless world experiment (kt)
 #if RENDER!=R_R1
 	if (i_mask[CDSGraphManager::fl_normal])//phase normal
 #endif

@@ -383,6 +383,9 @@ ID3DBaseTexture* CRender::texture_load(LPCSTR fRName, u32& ret_msize, bool bStag
 			Msg("! [kt chunk] texture not found: %s", chunk_file);
 		}
 	}
+	if (FS.exist(fn, "$level$", fname, ".dds")) goto _DDS;
+	if (FS.exist(fn, "$game_saves$", fname, ".dds")) goto _DDS;
+	if (FS.exist(fn, "$game_textures$", fname, ".dds")) goto _DDS;
 	if (g_kt_chunk.active)
 	{
 		// seamless world experiment (kt): a level keeps some textures in its own folder (terrain);

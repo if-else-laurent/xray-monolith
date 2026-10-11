@@ -91,6 +91,32 @@ static void kt_chunk_setup()
 		g_kt_chunk.cuts.push_back(box);
 		Msg("* [kt chunk] cut: %.2f, %.2f, %.2f - %.2f, %.2f, %.2f", box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z);
 	}
+	if (LPCSTR k = strstr(Core.Params, "-kt_mask "))
+	{
+		string_path name = "", file;
+		sscanf(k + 9, "%259[^ ]", name);
+		FS.update_path(file, "$game_levels$", name);
+		IReader* R = FS.exist(file) ? FS.r_open(file) : 0;
+		if (R && R->length() >= 28 && R->r_u32() == 0x4b4d544b) // "KTMK"
+		{
+			g_kt_chunk.mask_pieces = R->r_u32();
+			g_kt_chunk.mask_x0 = R->r_float();
+			g_kt_chunk.mask_z0 = R->r_float();
+			g_kt_chunk.mask_cell = R->r_float();
+			g_kt_chunk.mask_nx = R->r_u32();
+			g_kt_chunk.mask_nz = R->r_u32();
+			u32 size = g_kt_chunk.mask_nx * g_kt_chunk.mask_nz;
+			if (u32(R->elapsed()) >= size)
+			{
+				g_kt_chunk.mask.resize(size);
+				R->r(&g_kt_chunk.mask[0], size);
+				Msg("* [kt chunk] mask: %u x %u cells of %.1f m from %.1f, %.1f for %u pieces", g_kt_chunk.mask_nx, g_kt_chunk.mask_nz,
+				    g_kt_chunk.mask_cell, g_kt_chunk.mask_x0, g_kt_chunk.mask_z0, g_kt_chunk.mask_pieces);
+			}
+		}
+		if (g_kt_chunk.mask.empty()) Msg("! [kt chunk] cannot read the mask %s", file);
+		if (R) FS.r_close(R);
+	}
 	for (LPCSTR k = strstr(Core.Params, "-kt_ai_piece "); k; k = strstr(k + 1, "-kt_ai_piece "))
 	{
 		string_path piece = "";
@@ -212,7 +238,7 @@ bool IGame_Level::Load(u32 dwNum)
 			cforms[i].offset = g_kt_chunk.pieces[i].offset;
 		}
 		ObjectSpace.LoadWithChunks([](Fvector* V, int Vcnt, CDB::TRI* T, int Tcnt, void* params) { g_pGameLevel->Load_GameSpecific_CFORM(T, Tcnt); },
-		                           cforms, g_kt_chunk.cuts);
+		                           cforms, [](u32 piece, const Fvector& a, const Fvector& b, const Fvector& c) { return g_kt_chunk.cut(piece, a, b, c); });
 		for (u32 i = 0; i < cforms.size(); i++)
 		{
 			g_kt_chunk.pieces[i].tri_base = cforms[i].tri_base;
