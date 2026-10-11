@@ -119,6 +119,11 @@ static void kt_chunk_setup()
 			g_kt_chunk.ground_materials.push_back(u32(atoi(_GetItem(list, i, item))));
 		}
 	}
+	if (LPCSTR k = strstr(Core.Params, "-kt_static_radius "))
+	{
+		sscanf(k + 18, "%f", &g_kt_chunk.static_radius);
+		Msg("* [kt world] objects that stay online on the level leave beyond %.0f m", g_kt_chunk.static_radius);
+	}
 	if (LPCSTR k = strstr(Core.Params, "-kt_fake "))
 		sscanf(k + 9, "%u", &g_kt_chunk.fake_material);
 	if (!g_kt_chunk.opens.empty())

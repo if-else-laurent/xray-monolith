@@ -18,6 +18,8 @@
 #include "xrServer.h"
 #include "level.h"
 #include "map_manager.h"
+#include "ai_space.h"
+#include "../xrEngine/IGame_Level.h"
 
 void CSE_ALifeDynamicObject::on_spawn()
 {
@@ -130,6 +132,32 @@ bool CSE_ALifeDynamicObject::synchronize_location()
 	return (true);
 }
 
+// Seamless world experiment (kt): how far the object is from the player for the second radius, the
+// one of the objects that never leave by themselves. A zone counts from its edge, not its middle.
+// A negative answer: the radius is off.
+static float kt_static_distance(CSE_ALifeDynamicObject* object, const Fvector& actor)
+{
+	if (g_kt_chunk.static_radius <= 0.f || !ai().game_graph().kt_placed())
+		return (-1.f);
+	if (object->ID == 0)
+		return (-1.f);
+	float distance = actor.distance_to(object->o_Position);
+	if (CSE_Shape* shape = smart_cast<CSE_Shape*>(object))
+	{
+		float extent = 0.f;
+		for (u32 i = 0; i < shape->shapes.size(); i++)
+		{
+			const CShapeData::shape_def& def = shape->shapes[i];
+			float reach = (def.type == CShapeData::cfSphere)
+				              ? def.data.sphere.P.magnitude() + def.data.sphere.R
+				              : def.data.box.c.magnitude() + def.data.box.i.magnitude() + def.data.box.j.magnitude() + def.data.box.k.magnitude();
+			if (reach > extent) extent = reach;
+		}
+		distance -= extent;
+	}
+	return (_max(distance, 0.f));
+}
+
 void CSE_ALifeDynamicObject::try_switch_online()
 {
 	CSE_ALifeSchedulable* schedulable = smart_cast<CSE_ALifeSchedulable*>(this);
@@ -153,6 +181,12 @@ void CSE_ALifeDynamicObject::try_switch_online()
 
 	if (!can_switch_offline())
 	{
+		const float kt_distance = kt_static_distance(this, alife().graph().actor()->o_Position);
+		if (kt_distance > g_kt_chunk.static_radius * .9f)
+		{
+			on_failed_switch_online();
+			return;
+		}
 		alife().switch_online(this);
 		return;
 	}
@@ -169,7 +203,11 @@ void CSE_ALifeDynamicObject::try_switch_online()
 void CSE_ALifeDynamicObject::try_switch_offline()
 {
 	if (!can_switch_offline())
+	{
+		if (can_switch_online() && kt_static_distance(this, alife().graph().actor()->o_Position) > g_kt_chunk.static_radius * 1.1f && g_kt_chunk.static_radius > 0.f)
+			alife().switch_offline(this);
 		return;
+	}
 
 	if (!can_switch_online())
 	{

@@ -148,6 +148,10 @@ struct ENGINE_API KtChunk
 			if (ground_materials[i] == material) return true;
 		return false;
 	}
+	// -kt_static_radius <m>: the objects that never leave for offline on the player's level (anomalies,
+	// lamps, things, zones) do it beyond this distance, as the living do beyond theirs. With several
+	// levels as one place there are too many of them to keep online all at once. 0 - as it was.
+	float static_radius;
 	// the piece whose files are being read by the renderer: 0 the level, 1.. the chunks
 	u32 reading() const { return loading ? current + 1 : 0; }
 
@@ -166,7 +170,7 @@ struct ENGINE_API KtChunk
 		return strict && (foreign(piece, a.x, a.z) || foreign(piece, b.x, b.z) || foreign(piece, c.x, c.z));
 	}
 
-	KtChunk() : configured(false), active(false), loading(false), current(0), fake_material(u32(-1)), mask_x0(0), mask_z0(0), mask_cell(1), mask_nx(0), mask_nz(0), mask_pieces(0)
+	KtChunk() : configured(false), active(false), loading(false), current(0), fake_material(u32(-1)), static_radius(0), mask_x0(0), mask_z0(0), mask_cell(1), mask_nx(0), mask_nz(0), mask_pieces(0)
 	{
 		name[0] = 0;
 		base[0] = 0;
