@@ -128,7 +128,7 @@ void CObjectSpace::Load(IReader* F, CDB::build_callback build_callback)
 	});
 }
 
-void CObjectSpace::LoadWithChunk(CDB::build_callback build_callback, LPCSTR chunk_cform, const Fvector& offset, u32& chunk_tri_base, u32& chunk_tri_count)
+void CObjectSpace::LoadWithChunk(CDB::build_callback build_callback, LPCSTR chunk_cform, const Fvector& offset, const xr_vector<Fbox>& cuts, u32& chunk_tri_base, u32& chunk_tri_count)
 {
 	IReader* F = FS.r_open("$level$", "level.cform");
 	R_ASSERT(F);
@@ -152,19 +152,35 @@ void CObjectSpace::LoadWithChunk(CDB::build_callback build_callback, LPCSTR chun
 	Fvector* all_verts = xr_alloc<Fvector>(vert_count);
 	CDB::TRI* all_tris = xr_alloc<CDB::TRI>(tri_count);
 	CopyMemory(all_verts, verts, H.vertcount * sizeof(Fvector));
-	CopyMemory(all_tris, tris, H.facecount * sizeof(CDB::TRI));
 	for (u32 i = 0; i < H2.vertcount; i++)
 		all_verts[H.vertcount + i].add(verts2[i], offset);
+	// A triangle wholly inside a cut box is left out: a doorway where a wall closed the level.
+	struct local
+	{
+		static bool cut(const xr_vector<Fbox>& cuts, const Fvector* V, const CDB::TRI& T)
+		{
+			for (u32 c = 0; c < cuts.size(); c++)
+				if (cuts[c].contains(V[T.verts[0]]) && cuts[c].contains(V[T.verts[1]]) && cuts[c].contains(V[T.verts[2]])) return true;
+			return false;
+		}
+	};
+	u32 own_count = 0;
+	for (u32 i = 0; i < H.facecount; i++)
+		if (!local::cut(cuts, all_verts, tris[i])) all_tris[own_count++] = tris[i];
+	u32 chunk_count = 0;
 	for (u32 i = 0; i < H2.facecount; i++)
 	{
 		CDB::TRI T = tris2[i];
 		T.verts[0] += H.vertcount;
 		T.verts[1] += H.vertcount;
 		T.verts[2] += H.vertcount;
-		all_tris[H.facecount + i] = T;
+		if (!local::cut(cuts, all_verts, T)) all_tris[own_count + chunk_count++] = T;
 	}
-	chunk_tri_base = H.facecount;
-	chunk_tri_count = H2.facecount;
+	if (tri_count != own_count + chunk_count)
+		Msg("* [kt chunk] collision: %u triangles of the level and %u of the chunk are cut out", H.facecount - own_count, H2.facecount - chunk_count);
+	tri_count = own_count + chunk_count;
+	chunk_tri_base = own_count;
+	chunk_tri_count = chunk_count;
 
 	Fbox box2 = H2.aabb;
 	box2.min.add(offset);

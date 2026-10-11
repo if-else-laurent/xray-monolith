@@ -663,26 +663,32 @@ template <typename P>
 IC void CLevelGraph::iterate_vertices(const Fvector& min_position, const Fvector& max_position,
                                       const P& predicate) const
 {
-	CVertex *I, *E;
-
-	if (valid_vertex_position(min_position))
-		I = std::lower_bound(m_nodes, m_nodes + header().vertex_count(), vertex_position(min_position).xz(),
-		                     &vertex::predicate2);
-	else
-		I = m_nodes;
-
-	if (valid_vertex_position(max_position))
+	// kt: every sorted run of the array is looked through
+	CVertex *run_begin[2], *run_end[2];
+	const u32 runs = kt_runs(run_begin, run_end);
+	for (u32 r = 0; r < runs; r++)
 	{
-		E = std::upper_bound(m_nodes, m_nodes + header().vertex_count(), vertex_position(max_position).xz(),
-		                     &vertex::predicate);
-		if (E != (m_nodes + header().vertex_count()))
-			++E;
-	}
-	else
-		E = m_nodes + header().vertex_count();
+		CVertex *I, *E;
 
-	for (; I != E; ++I)
-		predicate(*I);
+		if (valid_vertex_position(min_position))
+			I = std::lower_bound(run_begin[r], run_end[r], vertex_position(min_position).xz(),
+			                     &vertex::predicate2);
+		else
+			I = run_begin[r];
+
+		if (valid_vertex_position(max_position))
+		{
+			E = std::upper_bound(run_begin[r], run_end[r], vertex_position(max_position).xz(),
+			                     &vertex::predicate);
+			if (E != run_end[r])
+				++E;
+		}
+		else
+			E = run_end[r];
+
+		for (; I != E; ++I)
+			predicate(*I);
+	}
 }
 
 IC u32 CLevelGraph::max_x() const

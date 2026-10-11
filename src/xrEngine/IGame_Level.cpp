@@ -43,7 +43,30 @@ ENGINE_API void kt_chunk_setup()
 	xr_strcpy(g_kt_chunk.name, name);
 	g_kt_chunk.offset = offset;
 	g_kt_chunk.active = true;
-	Msg("* [kt chunk] level %s is added at %.1f, %.1f, %.1f", name, offset.x, offset.y, offset.z);
+	Msg("* [kt chunk] level %s is added at %.2f, %.2f, %.2f", name, offset.x, offset.y, offset.z);
+
+	for (LPCSTR k = strstr(Core.Params, "-kt_cut "); k; k = strstr(k + 1, "-kt_cut "))
+	{
+		Fvector a, b;
+		if (6 != sscanf(k + 8, "%f,%f,%f,%f,%f,%f", &a.x, &a.y, &a.z, &b.x, &b.y, &b.z))
+		{
+			Msg("! [kt chunk] cannot read the key, expected -kt_cut <x0>,<y0>,<z0>,<x1>,<y1>,<z1>");
+			continue;
+		}
+		Fbox box;
+		box.invalidate();
+		box.modify(a);
+		box.modify(b);
+		g_kt_chunk.cuts.push_back(box);
+		Msg("* [kt chunk] cut: %.2f, %.2f, %.2f - %.2f, %.2f, %.2f", box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z);
+	}
+	for (LPCSTR k = strstr(Core.Params, "-kt_ai_piece "); k; k = strstr(k + 1, "-kt_ai_piece "))
+	{
+		string_path piece = "";
+		if (1 != sscanf(k + 13, "%259[^ ]", piece)) continue;
+		g_kt_chunk.ai_pieces.push_back(piece);
+		Msg("* [kt chunk] AI piece: %s", piece);
+	}
 }
 extern BOOL g_bLoaded;
 
@@ -154,7 +177,7 @@ bool IGame_Level::Load(u32 dwNum)
 		FS.update_path(chunk_cform, "$game_levels$", g_kt_chunk.name);
 		xr_strcat(chunk_cform, "\\level.cform");
 		ObjectSpace.LoadWithChunk([](Fvector* V, int Vcnt, CDB::TRI* T, int Tcnt, void* params) { g_pGameLevel->Load_GameSpecific_CFORM(T, Tcnt); },
-		                          chunk_cform, g_kt_chunk.offset, g_kt_chunk.tri_base, g_kt_chunk.tri_count);
+		                          chunk_cform, g_kt_chunk.offset, g_kt_chunk.cuts, g_kt_chunk.tri_base, g_kt_chunk.tri_count);
 		Msg("* [kt chunk] collision: triangles %u..%u of the static model", g_kt_chunk.tri_base, g_kt_chunk.tri_base + g_kt_chunk.tri_count);
 	}
 	else

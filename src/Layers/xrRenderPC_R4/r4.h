@@ -171,6 +171,13 @@ public:
 	xr_vector<FSlideWindowItem> kt_SWIs;
 	u32 kt_base_vb, kt_base_ib, kt_base_xvb, kt_base_xib;
 	void kt_LoadChunk();
+	// kt: where the geometry of the visuals that touch a cut box lies in the buffers of the file being read
+	struct kt_cut_range
+	{
+		u32 alt, vb, vbase, vcount, ib, ibase, icount;
+	};
+	xr_vector<kt_cut_range> kt_cut_ranges;
+	void kt_CutScan(IReader* visuals);
 	CPSLibrary PSLibrary;
 
 	CDetailManager* Details;

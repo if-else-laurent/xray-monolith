@@ -252,6 +252,9 @@ public:
 
 	IC CVertex* vertices() { return m_nodes; }
 
+	// kt: the runs of the node array sorted by cell: the level's own nodes and, if any, the added ones
+	u32 kt_runs(CVertex* begin[2], CVertex* end[2]) const;
+
 #ifndef AI_COMPILER
 	// Seamless world experiment (kt): the AI map of one more level merged into this one.
 	// 0 when nothing was merged; else the number of this level's own nodes, the chunk's follow.

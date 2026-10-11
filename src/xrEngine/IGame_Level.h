@@ -66,6 +66,20 @@ struct ENGINE_API KtChunk
 	u32 tri_base; // first triangle of the chunk in the merged static collision model
 	u32 tri_count;
 	xr_vector<void*> sectors; // CSector* of the chunk, drawn whenever they are in view
+	// -kt_cut <x0>,<y0>,<z0>,<x1>,<y1>,<z1>, any number of them: boxes in the world. A static triangle
+	// with all three corners inside one is dropped from collisions and is not drawn: a doorway through
+	// a wall that used to close the level.
+	xr_vector<Fbox> cuts;
+	// -kt_ai_piece <file under $game_levels$>, any number: small AI maps in the world's coordinates on
+	// the level's grid, merged like the chunk's map. They fill the passage between the level and the chunk.
+	xr_vector<shared_str> ai_pieces;
+
+	bool cut(const Fvector& a, const Fvector& b, const Fvector& c) const
+	{
+		for (u32 i = 0; i < cuts.size(); i++)
+			if (cuts[i].contains(a) && cuts[i].contains(b) && cuts[i].contains(c)) return true;
+		return false;
+	}
 
 	KtChunk() : active(false), loading(false), tri_base(0), tri_count(0)
 	{

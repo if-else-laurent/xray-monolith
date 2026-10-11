@@ -62,6 +62,13 @@ void CRender::level_Load(IReader* fs)
 		// VB,IB,SWI
 		//		g_pGamePersistent->LoadTitle("st_loading_geometry");
 		g_pGamePersistent->LoadTitle();
+		// kt: which of the level's visuals a cut box touches, to drop their triangles while the buffers are read
+		if (g_kt_chunk.active)
+		{
+			chunk = fs->open_chunk(fsL_VISUALS);
+			kt_CutScan(chunk);
+			chunk->close();
+		}
 		{
 			CStreamReader* geom = FS.rs_open("$level$", "level.geom");
 			R_ASSERT2(geom, "level.geom");
@@ -77,6 +84,8 @@ void CRender::level_Load(IReader* fs)
 			LoadBuffers(geom,TRUE);
 			FS.r_close(geom);
 		}
+
+		kt_cut_ranges.clear();
 
 		// Visuals
 		//		g_pGamePersistent->LoadTitle("st_loading_spatial_db");
@@ -205,6 +214,14 @@ void CRender::level_Unload()
 	b_loaded = FALSE;
 }
 
+// kt: vertex data kept while one geometry file is read, see the cut boxes
+struct kt_kept_vb
+{
+	BYTE* data;
+	u32 stride, position, count;
+};
+static xr_vector<kt_kept_vb> kt_kept;
+
 void CRender::LoadBuffers(CStreamReader* base_fs, BOOL _alternative)
 {
 	R_ASSERT2(base_fs, "Could not load geometry. File not found.");
@@ -227,9 +244,11 @@ void CRender::LoadBuffers(CStreamReader* base_fs, BOOL _alternative)
 		_VB.resize(vb_base + count);
 		u32 bufferSize = (MAXD3DDECLLENGTH + 1) * sizeof(D3DVERTEXELEMENT9);
 		D3DVERTEXELEMENT9* dcl = (D3DVERTEXELEMENT9*)_alloca(bufferSize);
+		kt_kept.resize(count);
 		for (u32 n = 0; n < count; n++)
 		{
 			const u32 i = vb_base + n;
+			kt_kept[n].data = 0;
 			// decl
 			//			D3DVERTEXELEMENT9*	dcl		= (D3DVERTEXELEMENT9*) fs().pointer();
 			fs->r(dcl, bufferSize);
@@ -270,6 +289,20 @@ void CRender::LoadBuffers(CStreamReader* base_fs, BOOL _alternative)
 				Msg("* [kt chunk] VB %d: %d verts, positions %s", i, vCount, moved ? "shifted" : "left as they are");
 			}
 			dx10BufferUtils::CreateVertexBuffer(&_VB[i], pData, vCount * vSize);
+			// kt: the vertices of a buffer a cut box may touch are kept till the indices are read
+			bool keep = false;
+			for (u32 r = 0; r < kt_cut_ranges.size(); r++)
+				if (kt_cut_ranges[r].alt == u32(_alternative ? 1 : 0) && kt_cut_ranges[r].vb == n) keep = true;
+			if (keep)
+				for (D3DVERTEXELEMENT9* e = dcl; e->Stream != 0xff; e++)
+					if (e->Usage == D3DDECLUSAGE_POSITION && e->UsageIndex == 0 && e->Type == D3DDECLTYPE_FLOAT3)
+					{
+						kt_kept[n].data = pData;
+						kt_kept[n].stride = vSize;
+						kt_kept[n].position = e->Offset;
+						kt_kept[n].count = vCount;
+					}
+			if (!kt_kept[n].data)
 			xr_free(pData);
 
 			//			fs->advance			(vCount*vSize);
@@ -301,6 +334,27 @@ void CRender::LoadBuffers(CStreamReader* base_fs, BOOL _alternative)
 			//	Check if buffer is less then 2048 kb
 			BYTE* pData = xr_alloc<BYTE>(iCount * 2);
 			fs->r(pData, iCount * 2);
+			// kt: a triangle wholly inside a cut box is made empty (three equal indices) and is not drawn
+			for (u32 r = 0; r < kt_cut_ranges.size(); r++)
+			{
+				const kt_cut_range& R = kt_cut_ranges[r];
+				if (R.alt != u32(_alternative ? 1 : 0) || R.ib != n || R.vb >= kt_kept.size() || !kt_kept[R.vb].data) continue;
+				const kt_kept_vb& K = kt_kept[R.vb];
+				if (R.ibase + R.icount > iCount || R.vbase + R.vcount > K.count) continue;
+				u16* idx = (u16*)pData + R.ibase;
+				u32 dropped = 0;
+				for (u32 t = 0; t + 2 < R.icount; t += 3)
+				{
+					if (u32(idx[t]) >= R.vcount || u32(idx[t + 1]) >= R.vcount || u32(idx[t + 2]) >= R.vcount) continue;
+					const Fvector& a = *(const Fvector*)(K.data + (R.vbase + idx[t]) * K.stride + K.position);
+					const Fvector& b = *(const Fvector*)(K.data + (R.vbase + idx[t + 1]) * K.stride + K.position);
+					const Fvector& c = *(const Fvector*)(K.data + (R.vbase + idx[t + 2]) * K.stride + K.position);
+					if (!g_kt_chunk.cut(a, b, c)) continue;
+					idx[t + 1] = idx[t + 2] = idx[t];
+					dropped++;
+				}
+				if (dropped) Msg("* [kt chunk] cut: %u triangles of a visual are not drawn (%s buffers)", dropped, _alternative ? "fast" : "main");
+			}
 			dx10BufferUtils::CreateIndexBuffer(&_IB[i], pData, iCount * 2);
 			xr_free(pData);
 
@@ -308,6 +362,59 @@ void CRender::LoadBuffers(CStreamReader* base_fs, BOOL _alternative)
 		}
 		fs->close();
 	}
+	for (u32 n = 0; n < kt_kept.size(); n++) xr_free(kt_kept[n].data);
+	kt_kept.clear();
+}
+
+// kt: finds the visuals whose box touches a cut box and remembers where their geometry lies.
+void CRender::kt_CutScan(IReader* fs)
+{
+	kt_cut_ranges.clear();
+	if (g_kt_chunk.cuts.empty() || !fs) return;
+	IReader* V = 0;
+	for (u32 index = 0; (V = fs->open_chunk(index)) != 0; index++)
+	{
+		ogf_header H;
+		if (V->find_chunk(OGF_HEADER))
+		{
+			V->r(&H, sizeof(H));
+			Fbox box;
+			box.set(H.bb.min, H.bb.max);
+			if (g_kt_chunk.loading)
+			{
+				box.min.add(g_kt_chunk.offset);
+				box.max.add(g_kt_chunk.offset);
+			}
+			bool touched = false;
+			for (u32 c = 0; c < g_kt_chunk.cuts.size(); c++)
+				if (box.intersect(g_kt_chunk.cuts[c])) touched = true;
+			if (touched)
+			{
+				kt_cut_range R;
+				if (V->find_chunk(OGF_GCONTAINER))
+				{
+					R.alt = 0;
+					R.vb = V->r_u32(); R.vbase = V->r_u32(); R.vcount = V->r_u32();
+					R.ib = V->r_u32(); R.ibase = V->r_u32(); R.icount = V->r_u32();
+					kt_cut_ranges.push_back(R);
+				}
+				if (V->find_chunk(OGF_FASTPATH))
+				{
+					IReader* fast = V->open_chunk(OGF_FASTPATH);
+					if (fast->find_chunk(OGF_GCONTAINER))
+					{
+						R.alt = 1;
+						R.vb = fast->r_u32(); R.vbase = fast->r_u32(); R.vcount = fast->r_u32();
+						R.ib = fast->r_u32(); R.ibase = fast->r_u32(); R.icount = fast->r_u32();
+						kt_cut_ranges.push_back(R);
+					}
+					fast->close();
+				}
+			}
+		}
+		V->close();
+	}
+	Msg("* [kt chunk] cut: %u geometry ranges of %s to look through", u32(kt_cut_ranges.size()), g_kt_chunk.loading ? "the chunk" : "the level");
 }
 
 // Seamless world experiment (kt). Reads the static geometry of one more level into the same
@@ -369,6 +476,10 @@ void CRender::kt_LoadChunk()
 
 	// Geometry
 	{
+		IReader* visuals = fs->open_chunk(fsL_VISUALS);
+		kt_CutScan(visuals);
+		visuals->close();
+
 		strconcat(sizeof(file), file, dir, "\\level.geom");
 		CStreamReader* geom = FS.rs_open(0, file);
 		R_ASSERT2(geom, file);
@@ -381,6 +492,7 @@ void CRender::kt_LoadChunk()
 		R_ASSERT2(geom, file);
 		LoadBuffers(geom, TRUE);
 		FS.r_close(geom);
+		kt_cut_ranges.clear();
 	}
 
 	// Visuals

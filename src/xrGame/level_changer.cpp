@@ -15,6 +15,7 @@
 #include "ai_object_location.h"
 #include "ai_space.h"
 #include "level_graph.h"
+#include "game_graph.h"
 #include "game_level_cross_table.h"
 
 #include "UIGameSP.h"
@@ -175,6 +176,15 @@ bool CLevelChanger::get_reject_pos(Fvector& p, Fvector& r)
 
 bool CLevelChanger::feel_touch_contact(CObject* object)
 {
+	// Seamless world experiment (kt): the level this changer leads to already stands next to this
+	// one, the actor walks there himself.
+	if (g_kt_chunk.active && ai().game_graph().valid_vertex_id(m_game_vertex_id))
+	{
+		const GameGraph::_LEVEL_ID level_id = ai().game_graph().vertex(m_game_vertex_id)->level_id();
+		if (0 == xr_strcmp(ai().game_graph().header().level(level_id).name(), g_kt_chunk.name))
+			return (false);
+	}
+
 	bool bRes = ((((CCF_Shape*)CFORM())->Contact(object)) != 0);
 	bRes = bRes && smart_cast<CActor*>(object) && smart_cast<CActor*>(object)->g_Alive();
 	return bRes;
