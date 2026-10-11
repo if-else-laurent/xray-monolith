@@ -715,7 +715,7 @@ void CDSGraphManager::add_leaf_Static(dxRender_Visual* pVisual)
 #if RENDER!=R_R1
 	if (i_mask[CDSGraphManager::fl_normal])//phase normal
 #endif
-		if (!RImplementation.HOM.visible(pVisual->vis))
+		if (!pVisual->kt_chunk && !RImplementation.HOM.visible(pVisual->vis))
 			return;
 
 	// Visual is 100% visible - simply add it
