@@ -1101,7 +1101,7 @@ int APIENTRY WinMain_impl(HINSTANCE hInstance,
 		Msg("* FlushProcessWriteBuffers: one caller at a time, imports replaced: %d", g_flush_imports_replaced);
 		// see dinput_notify_without_waiting below; -1: not Wine, nothing was touched
 		extern int g_dinput_imports_replaced;
-		Msg("* DirectInput of Wine: the device refresh notice is not waited for, imports replaced: %d",
+		Msg("* DirectInput of Wine: the device refresh notice is waited for 100 ms at most, imports replaced: %d",
 		    g_dinput_imports_replaced);
 	}
 
@@ -1366,7 +1366,10 @@ static void serialize_flush_process_write_buffers()
 // worker is at that moment waiting for the same lock of ReShade inside its hooked message
 // functions (raw input arrives at the worker window). Seen as a game that stands still at zero
 // CPU after being minimized and restored. The notice carries no data and needs no answer, so
-// the import of dinput8.dll is pointed at a wrapper that sends this one notice without waiting.
+// the import of dinput8.dll is pointed at a wrapper that waits for this one notice only a short
+// time. Not waiting at all is wrong: at exit Unacquire is followed at once by Release, which
+// holds the lock of dinput8 while it tells the worker to stop, and a worker that has only then
+// got to the queued notice waits for that lock - the game hung at exit that way.
 typedef LRESULT (WINAPI* send_message_type)(HWND, UINT, WPARAM, LPARAM);
 static send_message_type s_dinput_send_message = nullptr;
 // How many imports were replaced; said in the log once it is open.
@@ -1376,7 +1379,11 @@ static LRESULT WINAPI dinput_send_message(HWND window, UINT message, WPARAM wpar
 {
 	if (message == WM_USER + 0x10 && wparam == 1 && lparam == 0 &&
 	    GetWindowThreadProcessId(window, nullptr) != GetCurrentThreadId())
-		return SendNotifyMessageW(window, message, wparam, lparam);
+	{
+		DWORD_PTR result = 0;
+		SendMessageTimeoutW(window, message, wparam, lparam, SMTO_NORMAL, 100, &result);
+		return (LRESULT)result;
+	}
 
 	return s_dinput_send_message(window, message, wparam, lparam);
 }
