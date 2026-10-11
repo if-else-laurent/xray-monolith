@@ -49,6 +49,17 @@ void CDSGraphManager::traverse(CSector* start, CFrustum& F, Fvector& vBase, Fmat
 		f_portals.clear();
 	}
 
+	// Seamless world experiment (kt): a view from inside an extra level starts in a sector without
+	// portals and would not reach this level at all. It starts from the level's open-air sector
+	// instead; the extra levels' sectors are offered to every view below anyway.
+	if (RImplementation.pOutdoorSector)
+		for (void* sector : g_kt_chunk.sectors)
+			if (sector == (void*)start)
+			{
+				start = (CSector*)RImplementation.pOutdoorSector;
+				break;
+			}
+
 	i_vBase				= vBase;
 	i_frustum			= F;
 	i_mXFORM			= mXFORM;
