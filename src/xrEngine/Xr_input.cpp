@@ -108,19 +108,25 @@ CInput::~CInput(void)
 #endif
 	//_______________________
 
-	// Unacquire and release the device's interfaces
+	// Unacquire and release the device's interfaces.
+	// Under Wine the worker thread of DirectInput must have nothing queued when a device is
+	// released, or the release waits for it for ever (x_ray.cpp, dinput_notify_without_waiting).
+	extern void dinput_wait_for_worker();
 	if (pMouse)
 	{
 		pMouse->Unacquire();
+		dinput_wait_for_worker();
 		_RELEASE(pMouse);
 	}
 
 	if (pKeyboard)
 	{
 		pKeyboard->Unacquire();
+		dinput_wait_for_worker();
 		_RELEASE(pKeyboard);
 	}
 
+	dinput_wait_for_worker();
 	_SHOW_REF("Input: ", pDI);
 	_RELEASE(pDI);
 }

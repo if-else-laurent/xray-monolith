@@ -1370,16 +1370,32 @@ static void serialize_flush_process_write_buffers()
 // time. Not waiting at all is wrong: at exit Unacquire is followed at once by Release, which
 // holds the lock of dinput8 while it tells the worker to stop, and a worker that has only then
 // got to the queued notice waits for that lock - the game hung at exit that way.
+// For the case when a wait did time out and the notice is still queued, the engine lets the
+// worker empty its queue before it releases a device (dinput_wait_for_worker, from ~CInput).
 typedef LRESULT (WINAPI* send_message_type)(HWND, UINT, WPARAM, LPARAM);
 static send_message_type s_dinput_send_message = nullptr;
 // How many imports were replaced; said in the log once it is open.
 int g_dinput_imports_replaced = -1;
+// The window of the worker thread, known from the first notice.
+static HWND s_dinput_worker_window = nullptr;
+
+// Returns when the worker has handled everything sent to it so far. Call it with no lock of
+// dinput8 held and outside of Present: before a device is released.
+void dinput_wait_for_worker()
+{
+	if (!s_dinput_worker_window || !IsWindow(s_dinput_worker_window))
+		return;
+
+	DWORD_PTR result = 0;
+	SendMessageTimeoutW(s_dinput_worker_window, WM_NULL, 0, 0, SMTO_NORMAL, 3000, &result);
+}
 
 static LRESULT WINAPI dinput_send_message(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 {
 	if (message == WM_USER + 0x10 && wparam == 1 && lparam == 0 &&
 	    GetWindowThreadProcessId(window, nullptr) != GetCurrentThreadId())
 	{
+		s_dinput_worker_window = window;
 		DWORD_PTR result = 0;
 		SendMessageTimeoutW(window, message, wparam, lparam, SMTO_NORMAL, 100, &result);
 		return (LRESULT)result;
