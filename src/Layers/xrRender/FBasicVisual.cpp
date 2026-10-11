@@ -26,6 +26,7 @@ IRender_Mesh::~IRender_Mesh()
 dxRender_Visual::dxRender_Visual()
 {
 	Type = 0;
+	kt_chunk = false;
 	shader = 0;
 	vis.clear();
 }
@@ -60,6 +61,7 @@ void dxRender_Visual::Load(const char* N, IReader* data, u32)
 		vis.sphere.set(hdr.bs.c, hdr.bs.r);
 		if (g_kt_chunk.loading)
 		{
+			kt_chunk = true;
 			// seamless world experiment (kt): a visual of the extra level stands where that level stands
 			vis.box.min.add(g_kt_chunk.offset);
 			vis.box.max.add(g_kt_chunk.offset);

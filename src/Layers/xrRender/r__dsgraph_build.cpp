@@ -546,7 +546,7 @@ void CDSGraphManager::add_Static(IRenderVisual* piVisual, CFrustum& frustum, u32
 #if RENDER!=R_R1
 	if (i_mask[CDSGraphManager::fl_normal])//phase normal
 #endif
-		if (!RImplementation.HOM.visible(vis))
+		if (!pVisual->kt_chunk && !RImplementation.HOM.visible(vis))
 			return;
 
 	// If we get here visual is visible or partially visible
@@ -659,7 +659,7 @@ void CDSGraphManager::add_Static_MultiFrustum(IRenderVisual* piVisual, const xr_
 #if RENDER!=R_R1
 	if (i_mask[CDSGraphManager::fl_normal])//phase normal
 #endif
-		if (!RImplementation.HOM.visible(vis))
+		if (!pVisual->kt_chunk && !RImplementation.HOM.visible(vis))
 			return;
 
 	// If we get here visual is visible in at least one frustum
