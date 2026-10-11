@@ -119,13 +119,34 @@ struct ENGINE_API KtChunk
 	u32 mask_nx, mask_nz, mask_pieces;
 	xr_vector<u8> mask;
 
+	// A cell of the mask: 255 - anyone's; else the low seven bits name the owner, and the top bit
+	// says the ground here is replaced by a strip of our own that blends the two neighbours' relief.
+	u8 mask_at(float x, float z) const
+	{
+		if (mask.empty()) return 255;
+		int ix = iFloor((x - mask_x0) / mask_cell), iz = iFloor((z - mask_z0) / mask_cell);
+		if (ix < 0 || iz < 0 || ix >= int(mask_nx) || iz >= int(mask_nz)) return 255;
+		return mask[u32(iz) * mask_nx + u32(ix)];
+	}
 	bool foreign(u32 piece, float x, float z) const
 	{
-		if (mask.empty() || piece >= mask_pieces) return false;
-		int ix = iFloor((x - mask_x0) / mask_cell), iz = iFloor((z - mask_z0) / mask_cell);
-		if (ix < 0 || iz < 0 || ix >= int(mask_nx) || iz >= int(mask_nz)) return false;
-		u8 owner = mask[u32(iz) * mask_nx + u32(ix)];
-		return owner != 255 && owner != piece;
+		if (piece >= mask_pieces) return false;
+		u8 cell = mask_at(x, z);
+		return cell != 255 && u32(cell & 0x7f) != piece;
+	}
+	bool blended(u32 piece, float x, float z) const
+	{
+		if (piece >= mask_pieces) return false;
+		u8 cell = mask_at(x, z);
+		return cell != 255 && (cell & 0x80);
+	}
+	// -kt_ground <id>,<id>,...: the game materials that are ground (earth, gravel...), for collisions
+	xr_vector<u32> ground_materials;
+	bool ground(u32 material) const
+	{
+		for (u32 i = 0; i < ground_materials.size(); i++)
+			if (ground_materials[i] == material) return true;
+		return false;
 	}
 	// the piece whose files are being read by the renderer: 0 the level, 1.. the chunks
 	u32 reading() const { return loading ? current + 1 : 0; }
@@ -134,12 +155,14 @@ struct ENGINE_API KtChunk
 	// On whose land a triangle lies is told by its middle. `strict` is for what must not stick out
 	// over the neighbour at all - the black planes that screen a level from outside, big far
 	// triangles: one corner on foreign land is enough.
-	bool cut(u32 piece, const Fvector& a, const Fvector& b, const Fvector& c, bool strict = false) const
+	bool cut(u32 piece, const Fvector& a, const Fvector& b, const Fvector& c, bool strict = false, bool is_ground = false) const
 	{
 		for (u32 i = 0; i < cuts.size(); i++)
 			if (cuts[i].contains(a) && cuts[i].contains(b) && cuts[i].contains(c)) return true;
 		if (mask.empty() || piece >= mask_pieces) return false;
-		if (foreign(piece, (a.x + b.x + c.x) / 3, (a.z + b.z + c.z) / 3)) return true;
+		const float mx = (a.x + b.x + c.x) / 3, mz = (a.z + b.z + c.z) / 3;
+		if (foreign(piece, mx, mz)) return true;
+		if (is_ground && blended(piece, mx, mz)) return true;
 		return strict && (foreign(piece, a.x, a.z) || foreign(piece, b.x, b.z) || foreign(piece, c.x, c.z));
 	}
 

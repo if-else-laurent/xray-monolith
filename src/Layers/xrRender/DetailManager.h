@@ -176,6 +176,13 @@ public:
 	IReader* dtFS;
 	DetailHeader dtH;
 	DetailSlot* dtSlots; // note: pointer into VFS
+	// Seamless world experiment (kt): the grass of one extra level, shown on its land
+	IReader* kt_fs;
+	DetailHeader kt_H;
+	DetailSlot* kt_slots;
+	u32 kt_id_base; // its models follow the level's own in `objects`
+	u32 kt_piece;
+	Fvector kt_offset;
 	DetailSlot DS_empty;
 
 public:

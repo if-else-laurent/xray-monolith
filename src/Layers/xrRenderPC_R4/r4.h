@@ -177,7 +177,7 @@ public:
 		u32 alt, vb, vbase, vcount, ib, ibase, icount, strict;
 	};
 	xr_vector<kt_cut_range> kt_cut_ranges;
-	xr_vector<u8> kt_screen; // per shader: draws a screen (prop_fake*, fx_lavahell), never meant to be seen from outside
+	xr_vector<u8> kt_screen; // per shader: draws a screen (prop_fake*, fx_lavahell), never meant to be seen from outside; 2: the terrain
 	void kt_CutScan(IReader* visuals);
 	// kt: vertices of the chunk's trees: they are local to the tree and move with its matrix, not with the buffer
 	xr_vector<kt_cut_range> kt_local_ranges;

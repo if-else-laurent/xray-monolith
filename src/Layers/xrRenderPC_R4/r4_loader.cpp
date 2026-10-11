@@ -50,7 +50,7 @@ void CRender::level_Load(IReader* fs)
 			xr_strcpy(n_tlist, delim + 1);
 			Shaders[i] = dxRenderDeviceRender::Instance().Resources->Create(n_sh, n_tlist);
 			if (kt_screen.size() <= i) kt_screen.resize(i + 1, 0);
-			kt_screen[i] = (strstr(n_tlist, "prop_fake") || strstr(n_tlist, "fx_lavahell")) ? 1 : 0;
+			kt_screen[i] = (strstr(n_tlist, "prop_fake") || strstr(n_tlist, "fx_lavahell")) ? 1 : (strstr(n_tlist, "terrain\\") == n_tlist ? 2 : 0);
 		}
 		chunk->close();
 	}
@@ -365,7 +365,7 @@ void CRender::LoadBuffers(CStreamReader* base_fs, BOOL _alternative)
 					const Fvector& a = *(const Fvector*)(K.data + (R.vbase + idx[t]) * K.stride + K.position);
 					const Fvector& b = *(const Fvector*)(K.data + (R.vbase + idx[t + 1]) * K.stride + K.position);
 					const Fvector& c = *(const Fvector*)(K.data + (R.vbase + idx[t + 2]) * K.stride + K.position);
-					if (!g_kt_chunk.cut(g_kt_chunk.reading(), a, b, c, R.strict != 0)) continue;
+					if (!g_kt_chunk.cut(g_kt_chunk.reading(), a, b, c, R.strict == 1, R.strict == 2)) continue;
 					idx[t + 1] = idx[t + 2] = idx[t];
 					dropped++;
 				}
@@ -452,7 +452,7 @@ void CRender::kt_CutScan(IReader* fs)
 			{
 				kt_cut_range R;
 				const u32 shader = u32(H.shader_id) + (g_kt_chunk.loading ? kt_base_shader : 0);
-				R.strict = (shader < kt_screen.size() && kt_screen[shader]) ? 1 : 0;
+				R.strict = shader < kt_screen.size() ? kt_screen[shader] : 0; // 1 - a screen, 2 - the terrain
 				if (V->find_chunk(OGF_GCONTAINER))
 				{
 					R.alt = 0;
@@ -541,7 +541,7 @@ void CRender::kt_LoadChunk(u32 piece)
 			}
 			Shaders[kt_base_shader + i] = dxRenderDeviceRender::Instance().Resources->Create(n_sh, n_tlist);
 			if (kt_screen.size() <= kt_base_shader + i) kt_screen.resize(kt_base_shader + i + 1, 0);
-			kt_screen[kt_base_shader + i] = (strstr(n_tlist, "prop_fake") || strstr(n_tlist, "fx_lavahell")) ? 1 : 0;
+			kt_screen[kt_base_shader + i] = (strstr(n_tlist, "prop_fake") || strstr(n_tlist, "fx_lavahell")) ? 1 : (strstr(n_tlist, "terrain\\") == n_tlist ? 2 : 0);
 		}
 		chunk->close();
 	}
@@ -555,7 +555,13 @@ void CRender::kt_LoadChunk(u32 piece)
 		kt_LocalScan(visuals);
 		visuals->close();
 
-		strconcat(sizeof(file), file, dir, "\\level.geom");
+		// a patched copy made for the seam (relit, for one) goes before the level's own file
+		string_path over;
+		strconcat(sizeof(over), over, "kt_override\\", g_kt_chunk.name, "\\level.geom");
+		if (!FS.exist(file, "$game_levels$", over))
+			strconcat(sizeof(file), file, dir, "\\level.geom");
+		else
+			Msg("* [kt chunk] geometry of %s is read from %s", g_kt_chunk.name, file);
 		CStreamReader* geom = FS.rs_open(0, file);
 		R_ASSERT2(geom, file);
 		LoadBuffers(geom, FALSE);

@@ -85,6 +85,14 @@ void CDetail::Load(IReader* S)
 	string256 fnT, fnS;
 	S->r_stringZ(fnS, sizeof(fnS));
 	S->r_stringZ(fnT, sizeof(fnT));
+	if (g_kt_chunk.loading && !strchr(fnT, '\\'))
+	{
+		// seamless world experiment (kt): the grass atlas lies in the level's folder under one name
+		// in every level; the extra level's one is named by its piece for the texture loader
+		string256 named;
+		xr_sprintf(named, "kt~%u~%s", g_kt_chunk.current, fnT);
+		xr_strcpy(fnT, named);
+	}
 	shader.create(fnS, fnT);
 
 	// Params

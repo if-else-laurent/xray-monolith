@@ -101,6 +101,16 @@ static void kt_chunk_setup()
 		box.modify(b);
 		g_kt_chunk.opens.push_back(box);
 	}
+	if (LPCSTR k = strstr(Core.Params, "-kt_ground "))
+	{
+		string256 list = "";
+		sscanf(k + 11, "%255[^ ]", list);
+		for (int i = 0, n = _GetItemCount(list); i < n; i++)
+		{
+			string32 item;
+			g_kt_chunk.ground_materials.push_back(u32(atoi(_GetItem(list, i, item))));
+		}
+	}
 	if (LPCSTR k = strstr(Core.Params, "-kt_fake "))
 		sscanf(k + 9, "%u", &g_kt_chunk.fake_material);
 	if (!g_kt_chunk.opens.empty())
@@ -258,7 +268,11 @@ bool IGame_Level::Load(u32 dwNum)
 			                           // a big triangle is far scenery or a screen: it must not hang over the neighbour
 			                           const float big = 12.f * 12.f;
 			                           const bool strict = a.distance_to_sqr(b) > big || b.distance_to_sqr(c) > big || c.distance_to_sqr(a) > big;
-			                           return g_kt_chunk.cut(piece, a, b, c, strict);
+			                           // ground: by material, and only what lies flat enough to be walked on
+			                           Fvector n;
+			                           n.mknormal(a, b, c);
+			                           const bool is_ground = _abs(n.y) > .5f && g_kt_chunk.ground(material);
+			                           return g_kt_chunk.cut(piece, a, b, c, strict, is_ground);
 		                           });
 		for (u32 i = 0; i < cforms.size(); i++)
 		{

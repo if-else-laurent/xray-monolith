@@ -378,6 +378,9 @@ ID3DBaseTexture* CRender::texture_load(LPCSTR fRName, u32& ret_msize, bool bStag
 		if (rest && piece < g_kt_chunk.pieces.size())
 		{
 			string_path chunk_file;
+			// a patched copy made for the seam goes first
+			strconcat(sizeof(chunk_file), chunk_file, "kt_override\\", g_kt_chunk.pieces[piece].name, "\\", rest + 1, ".dds");
+			if (FS.exist(fn, "$game_levels$", chunk_file)) goto _DDS;
 			strconcat(sizeof(chunk_file), chunk_file, g_kt_chunk.pieces[piece].name, "\\", rest + 1, ".dds");
 			if (FS.exist(fn, "$game_levels$", chunk_file)) goto _DDS;
 			Msg("! [kt chunk] texture not found: %s", chunk_file);
