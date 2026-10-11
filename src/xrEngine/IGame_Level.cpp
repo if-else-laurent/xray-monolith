@@ -46,32 +46,35 @@ ENGINE_API bool kt_chunk_wanted()
 static void kt_chunk_setup()
 {
 	g_kt_chunk = KtChunk();
-	LPCSTR key = strstr(Core.Params, "-kt_chunk ");
-	if (!key) return;
-	string64 name = "";
-	Fvector offset = {0, 0, 0};
-	if (4 != sscanf(key + 10, "%63[^, ],%f,%f,%f", name, &offset.x, &offset.y, &offset.z))
+	for (LPCSTR key = strstr(Core.Params, "-kt_chunk "); key; key = strstr(key + 1, "-kt_chunk "))
 	{
-		Msg("! [kt chunk] cannot read the key, expected -kt_chunk <level>,<x>,<y>,<z>");
-		return;
+		KtPiece piece;
+		piece.name[0] = 0;
+		piece.tri_base = piece.tri_count = 0;
+		if (4 != sscanf(key + 10, "%63[^, ],%f,%f,%f", piece.name, &piece.offset.x, &piece.offset.y, &piece.offset.z))
+		{
+			Msg("! [kt chunk] cannot read the key, expected -kt_chunk <level>,<x>,<y>,<z>");
+			continue;
+		}
+		string_path file;
+		FS.update_path(file, "$game_levels$", piece.name);
+		xr_strcat(file, "\\level.cform");
+		if (!FS.exist(file))
+		{
+			Msg("! [kt chunk] no such level: %s", file);
+			continue;
+		}
+		g_kt_chunk.pieces.push_back(piece);
+		Msg("* [kt chunk] level %s is added at %.2f, %.2f, %.2f", piece.name, piece.offset.x, piece.offset.y, piece.offset.z);
 	}
-	string_path file;
-	FS.update_path(file, "$game_levels$", name);
-	xr_strcat(file, "\\level.cform");
-	if (!FS.exist(file))
-	{
-		Msg("! [kt chunk] no such level: %s", file);
-		return;
-	}
-	xr_strcpy(g_kt_chunk.name, name);
-	g_kt_chunk.offset = offset;
+	if (g_kt_chunk.pieces.empty()) return;
+	g_kt_chunk.select(0);
 	g_kt_chunk.configured = true;
 	if (LPCSTR k = strstr(Core.Params, "-kt_chunk_base "))
 	{
 		sscanf(k + 15, "%63[^ ]", g_kt_chunk.base);
 		strlwr(g_kt_chunk.base);
 	}
-	Msg("* [kt chunk] level %s is added at %.2f, %.2f, %.2f", name, offset.x, offset.y, offset.z);
 
 	for (LPCSTR k = strstr(Core.Params, "-kt_cut "); k; k = strstr(k + 1, "-kt_cut "))
 	{
@@ -201,12 +204,21 @@ bool IGame_Level::Load(u32 dwNum)
 	g_kt_chunk.active = kt_chunk_wanted();
 	if (g_kt_chunk.active)
 	{
-		string_path chunk_cform;
-		FS.update_path(chunk_cform, "$game_levels$", g_kt_chunk.name);
-		xr_strcat(chunk_cform, "\\level.cform");
-		ObjectSpace.LoadWithChunk([](Fvector* V, int Vcnt, CDB::TRI* T, int Tcnt, void* params) { g_pGameLevel->Load_GameSpecific_CFORM(T, Tcnt); },
-		                          chunk_cform, g_kt_chunk.offset, g_kt_chunk.cuts, g_kt_chunk.tri_base, g_kt_chunk.tri_count);
-		Msg("* [kt chunk] collision: triangles %u..%u of the static model", g_kt_chunk.tri_base, g_kt_chunk.tri_base + g_kt_chunk.tri_count);
+		xr_vector<KtCform> cforms(g_kt_chunk.pieces.size());
+		for (u32 i = 0; i < cforms.size(); i++)
+		{
+			FS.update_path(cforms[i].file, "$game_levels$", g_kt_chunk.pieces[i].name);
+			xr_strcat(cforms[i].file, "\\level.cform");
+			cforms[i].offset = g_kt_chunk.pieces[i].offset;
+		}
+		ObjectSpace.LoadWithChunks([](Fvector* V, int Vcnt, CDB::TRI* T, int Tcnt, void* params) { g_pGameLevel->Load_GameSpecific_CFORM(T, Tcnt); },
+		                           cforms, g_kt_chunk.cuts);
+		for (u32 i = 0; i < cforms.size(); i++)
+		{
+			g_kt_chunk.pieces[i].tri_base = cforms[i].tri_base;
+			g_kt_chunk.pieces[i].tri_count = cforms[i].tri_count;
+			Msg("* [kt chunk] collision of %s: triangles %u..%u of the static model", g_kt_chunk.pieces[i].name, cforms[i].tri_base, cforms[i].tri_base + cforms[i].tri_count);
+		}
 	}
 	else
 	ObjectSpace.Load( [](Fvector* V, int Vcnt, CDB::TRI* T, int Tcnt, void* params){g_pGameLevel->Load_GameSpecific_CFORM(T, Tcnt);});

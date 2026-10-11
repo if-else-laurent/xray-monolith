@@ -128,32 +128,36 @@ void CObjectSpace::Load(IReader* F, CDB::build_callback build_callback)
 	});
 }
 
-void CObjectSpace::LoadWithChunk(CDB::build_callback build_callback, LPCSTR chunk_cform, const Fvector& offset, const xr_vector<Fbox>& cuts, u32& chunk_tri_base, u32& chunk_tri_count)
+void CObjectSpace::LoadWithChunks(CDB::build_callback build_callback, xr_vector<KtCform>& chunks, const xr_vector<Fbox>& cuts)
 {
 	IReader* F = FS.r_open("$level$", "level.cform");
 	R_ASSERT(F);
-	IReader* F2 = FS.r_open(chunk_cform);
-	R_ASSERT2(F2, chunk_cform);
-
-	hdrCFORM H, H2;
+	hdrCFORM H;
 	F->r(&H, sizeof(hdrCFORM));
-	F2->r(&H2, sizeof(hdrCFORM));
 	R_ASSERT(CFORM_CURRENT_VERSION == H.version);
-	R_ASSERT(CFORM_CURRENT_VERSION == H2.version);
-
 	Fvector* verts = (Fvector*)F->pointer();
 	CDB::TRI* tris = (CDB::TRI*)(verts + H.vertcount);
-	Fvector* verts2 = (Fvector*)F2->pointer();
-	CDB::TRI* tris2 = (CDB::TRI*)(verts2 + H2.vertcount);
 
-	// One model for both: the vertices of the chunk are shifted, its triangles point at them.
-	u32 vert_count = H.vertcount + H2.vertcount;
-	u32 tri_count = H.facecount + H2.facecount;
-	Fvector* all_verts = xr_alloc<Fvector>(vert_count);
-	CDB::TRI* all_tris = xr_alloc<CDB::TRI>(tri_count);
-	CopyMemory(all_verts, verts, H.vertcount * sizeof(Fvector));
-	for (u32 i = 0; i < H2.vertcount; i++)
-		all_verts[H.vertcount + i].add(verts2[i], offset);
+	xr_vector<IReader*> readers(chunks.size());
+	xr_vector<hdrCFORM> headers(chunks.size());
+	u32 vert_count = H.vertcount;
+	u32 tri_count = H.facecount;
+	m_BoundingVolume.set(H.aabb);
+	for (u32 c = 0; c < chunks.size(); c++)
+	{
+		readers[c] = FS.r_open(chunks[c].file);
+		R_ASSERT2(readers[c], chunks[c].file);
+		readers[c]->r(&headers[c], sizeof(hdrCFORM));
+		R_ASSERT(CFORM_CURRENT_VERSION == headers[c].version);
+		vert_count += headers[c].vertcount;
+		tri_count += headers[c].facecount;
+		Fbox box = headers[c].aabb;
+		box.min.add(chunks[c].offset);
+		box.max.add(chunks[c].offset);
+		m_BoundingVolume.merge(box);
+	}
+
+	// One model for all: the vertices of a chunk are shifted, its triangles point at them.
 	// A triangle wholly inside a cut box is left out: a doorway where a wall closed the level.
 	struct local
 	{
@@ -164,29 +168,35 @@ void CObjectSpace::LoadWithChunk(CDB::build_callback build_callback, LPCSTR chun
 			return false;
 		}
 	};
-	u32 own_count = 0;
+	Fvector* all_verts = xr_alloc<Fvector>(vert_count);
+	CDB::TRI* all_tris = xr_alloc<CDB::TRI>(tri_count);
+	CopyMemory(all_verts, verts, H.vertcount * sizeof(Fvector));
+	u32 kept = 0;
 	for (u32 i = 0; i < H.facecount; i++)
-		if (!local::cut(cuts, all_verts, tris[i])) all_tris[own_count++] = tris[i];
-	u32 chunk_count = 0;
-	for (u32 i = 0; i < H2.facecount; i++)
+		if (!local::cut(cuts, all_verts, tris[i])) all_tris[kept++] = tris[i];
+	u32 dropped = H.facecount - kept;
+	u32 vert_base = H.vertcount;
+	for (u32 c = 0; c < chunks.size(); c++)
 	{
-		CDB::TRI T = tris2[i];
-		T.verts[0] += H.vertcount;
-		T.verts[1] += H.vertcount;
-		T.verts[2] += H.vertcount;
-		if (!local::cut(cuts, all_verts, T)) all_tris[own_count + chunk_count++] = T;
+		Fvector* verts2 = (Fvector*)readers[c]->pointer();
+		CDB::TRI* tris2 = (CDB::TRI*)(verts2 + headers[c].vertcount);
+		for (u32 i = 0; i < headers[c].vertcount; i++)
+			all_verts[vert_base + i].add(verts2[i], chunks[c].offset);
+		chunks[c].tri_base = kept;
+		for (u32 i = 0; i < headers[c].facecount; i++)
+		{
+			CDB::TRI T = tris2[i];
+			T.verts[0] += vert_base;
+			T.verts[1] += vert_base;
+			T.verts[2] += vert_base;
+			if (!local::cut(cuts, all_verts, T)) all_tris[kept++] = T;
+			else dropped++;
+		}
+		chunks[c].tri_count = kept - chunks[c].tri_base;
+		vert_base += headers[c].vertcount;
 	}
-	if (tri_count != own_count + chunk_count)
-		Msg("* [kt chunk] collision: %u triangles of the level and %u of the chunk are cut out", H.facecount - own_count, H2.facecount - chunk_count);
-	tri_count = own_count + chunk_count;
-	chunk_tri_base = own_count;
-	chunk_tri_count = chunk_count;
-
-	Fbox box2 = H2.aabb;
-	box2.min.add(offset);
-	box2.max.add(offset);
-	m_BoundingVolume.set(H.aabb);
-	m_BoundingVolume.merge(box2);
+	if (dropped) Msg("* [kt chunk] collision: %u triangles are cut out", dropped);
+	tri_count = kept;
 
 	g_SpatialSpace->initialize(m_BoundingVolume);
 	g_SpatialSpacePhysic->initialize(m_BoundingVolume);
@@ -196,7 +206,7 @@ void CObjectSpace::LoadWithChunk(CDB::build_callback build_callback, LPCSTR chun
 	xr_free(all_verts);
 	xr_free(all_tris);
 	FS.r_close(F);
-	FS.r_close(F2);
+	for (u32 c = 0; c < chunks.size(); c++) FS.r_close(readers[c]);
 
 	const DWORD this_thread_id = GetCurrentThreadId();
 	Static.async_cform_load.run([this, this_thread_id]()

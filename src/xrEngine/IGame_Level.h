@@ -54,19 +54,27 @@ public:
 };
 
 //-----------------------------------------------------------------------------------------------------------
-// Seamless world experiment (kt): one more level loaded next to the current one, shifted in space.
-// Asked for on the command line: -kt_chunk <level folder>,<x>,<y>,<z>
-// Only its static geometry and its collision mesh are taken; no AI map, no objects, no details.
+// Seamless world experiment (kt): more levels loaded next to the current one, shifted in space.
+// Asked for on the command line: -kt_chunk <level folder>,<x>,<y>,<z>, any number of them.
+// Their static geometry, collision mesh and AI map (if there is one) are taken; no objects, no details.
+struct KtPiece
+{
+	string64 name;
+	Fvector offset;
+	u32 tri_base; // first triangle of the piece in the merged static collision model
+	u32 tri_count;
+};
+
 struct ENGINE_API KtChunk
 {
+	xr_vector<KtPiece> pieces;
 	bool configured; // asked for on the command line and found
 	bool active; // and the level being played is the one it is to stand next to
 	string64 base; // -kt_chunk_base <level>: the only level the chunk is added to; empty - any
 	bool loading; // the renderer is reading the chunk's files right now
-	string64 name;
+	u32 current; // the piece being read
+	string64 name; // of the piece being read
 	Fvector offset;
-	u32 tri_base; // first triangle of the chunk in the merged static collision model
-	u32 tri_count;
 	xr_vector<void*> sectors; // CSector* of the chunk, drawn whenever they are in view
 	// -kt_cut <x0>,<y0>,<z0>,<x1>,<y1>,<z1>, any number of them: boxes in the world. A static triangle
 	// with all three corners inside one is dropped from collisions and is not drawn: a doorway through
@@ -76,6 +84,19 @@ struct ENGINE_API KtChunk
 	// the level's grid, merged like the chunk's map. They fill the passage between the level and the chunk.
 	xr_vector<shared_str> ai_pieces;
 
+	void select(u32 piece)
+	{
+		current = piece;
+		xr_strcpy(name, pieces[piece].name);
+		offset = pieces[piece].offset;
+	}
+	bool has(LPCSTR level) const
+	{
+		for (u32 i = 0; i < pieces.size(); i++)
+			if (0 == xr_strcmp(pieces[i].name, level)) return true;
+		return false;
+	}
+
 	bool cut(const Fvector& a, const Fvector& b, const Fvector& c) const
 	{
 		for (u32 i = 0; i < cuts.size(); i++)
@@ -83,7 +104,7 @@ struct ENGINE_API KtChunk
 		return false;
 	}
 
-	KtChunk() : configured(false), active(false), loading(false), tri_base(0), tri_count(0)
+	KtChunk() : configured(false), active(false), loading(false), current(0)
 	{
 		name[0] = 0;
 		base[0] = 0;

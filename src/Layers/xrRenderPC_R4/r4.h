@@ -168,9 +168,9 @@ public:
 	// Seamless world experiment (kt): while a chunk is being read, the numbers in its files are
 	// local to it; these are added to reach its entries in the containers above.
 	u32 kt_base_shader, kt_base_visual;
-	xr_vector<FSlideWindowItem> kt_SWIs;
+	xr_vector<xr_vector<FSlideWindowItem>*> kt_SWIs; // one set per piece
 	u32 kt_base_vb, kt_base_ib, kt_base_xvb, kt_base_xib;
-	void kt_LoadChunk();
+	void kt_LoadChunk(u32 piece);
 	// kt: where the geometry of the visuals that touch a cut box lies in the buffers of the file being read
 	struct kt_cut_range
 	{

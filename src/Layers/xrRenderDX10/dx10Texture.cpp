@@ -370,24 +370,29 @@ ID3DBaseTexture* CRender::texture_load(LPCSTR fRName, u32& ret_msize, bool bStag
 			goto _DDS_2D;
 		}
 	}
-	if (0 == strncmp(fname, "kt2~", 4))
+	if (0 == strncmp(fname, "kt~", 3))
 	{
-		// seamless world experiment (kt): a lightmap or a LOD atlas of the extra level
-		string_path chunk_file;
-		strconcat(sizeof(chunk_file), chunk_file, g_kt_chunk.name, "\\", fname + 4, ".dds");
-		if (FS.exist(fn, "$game_levels$", chunk_file)) goto _DDS;
-		Msg("! [kt chunk] texture not found: %s", chunk_file);
+		// seamless world experiment (kt): a lightmap or a LOD atlas of an extra level, "kt~<piece>~<name>"
+		u32 piece = u32(atoi(fname + 3));
+		LPCSTR rest = strchr(fname + 3, '~');
+		if (rest && piece < g_kt_chunk.pieces.size())
+		{
+			string_path chunk_file;
+			strconcat(sizeof(chunk_file), chunk_file, g_kt_chunk.pieces[piece].name, "\\", rest + 1, ".dds");
+			if (FS.exist(fn, "$game_levels$", chunk_file)) goto _DDS;
+			Msg("! [kt chunk] texture not found: %s", chunk_file);
+		}
 	}
-	if (FS.exist(fn, "$level$", fname, ".dds")) goto _DDS;
-	if (FS.exist(fn, "$game_saves$", fname, ".dds")) goto _DDS;
-	if (FS.exist(fn, "$game_textures$", fname, ".dds")) goto _DDS;
 	if (g_kt_chunk.active)
 	{
 		// seamless world experiment (kt): a level keeps some textures in its own folder (terrain);
-		// those of the extra level are not under $level$
-		string_path chunk_file;
-		strconcat(sizeof(chunk_file), chunk_file, g_kt_chunk.name, "\\", fname, ".dds");
-		if (FS.exist(fn, "$game_levels$", chunk_file)) goto _DDS;
+		// those of the extra levels are not under $level$
+		for (u32 piece = 0; piece < g_kt_chunk.pieces.size(); piece++)
+		{
+			string_path chunk_file;
+			strconcat(sizeof(chunk_file), chunk_file, g_kt_chunk.pieces[piece].name, "\\", fname, ".dds");
+			if (FS.exist(fn, "$game_levels$", chunk_file)) goto _DDS;
+		}
 	}
 
 

@@ -110,25 +110,26 @@ void CLevelGraph::kt_merge_chunk()
 
 	bool ok = true;
 	xr_vector<Piece> pieces;
-	for (u32 n = 0; n <= g_kt_chunk.ai_pieces.size(); n++)
+	const u32 chunk_count = u32(g_kt_chunk.pieces.size());
+	for (u32 n = 0; n < chunk_count + g_kt_chunk.ai_pieces.size(); n++)
 	{
 		string_path file;
 		Piece piece;
-		if (n == 0)
+		if (n < chunk_count)
 		{
-			FS.update_path(file, "$game_levels$", g_kt_chunk.name);
+			// a level standing next to this one; a piece of plain geometry may have no AI map
+			FS.update_path(file, "$game_levels$", g_kt_chunk.pieces[n].name);
 			xr_strcat(file, "\\level.ai");
-			piece.offset = g_kt_chunk.offset;
+			piece.offset = g_kt_chunk.pieces[n].offset;
 		}
 		else
 		{
-			FS.update_path(file, "$game_levels$", *g_kt_chunk.ai_pieces[n - 1]);
+			FS.update_path(file, "$game_levels$", *g_kt_chunk.ai_pieces[n - chunk_count]);
 			piece.offset.set(0, 0, 0);
 		}
 		if (!FS.exist(file))
 		{
-			Msg("! [kt chunk] AI map: no file %s", file);
-			if (n == 0) ok = false;
+			Msg("%s [kt chunk] AI map: no file %s", n < chunk_count ? "*" : "!", file);
 			continue;
 		}
 		piece.reader = FS.r_open(file);

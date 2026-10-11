@@ -181,7 +181,7 @@ bool CLevelChanger::feel_touch_contact(CObject* object)
 	if (g_kt_chunk.active && ai().game_graph().valid_vertex_id(m_game_vertex_id))
 	{
 		const GameGraph::_LEVEL_ID level_id = ai().game_graph().vertex(m_game_vertex_id)->level_id();
-		if (0 == xr_strcmp(ai().game_graph().header().level(level_id).name(), g_kt_chunk.name))
+		if (g_kt_chunk.has(*ai().game_graph().header().level(level_id).name()))
 			return (false);
 	}
 

@@ -23,6 +23,14 @@ class CObject;
 //-----------------------------------------------------------------------------------------------------------
 struct hdrCFORM;
 
+// Seamless world experiment (kt): the collision mesh of one more level to merge into the static model
+struct KtCform
+{
+	string_path file;
+	Fvector offset;
+	u32 tri_base, tri_count; // filled in: where its triangles ended up
+};
+
 class XRCDB_API CObjectSpace
 {
 private:
@@ -54,7 +62,7 @@ public:
 	void Load(IReader* R, CDB::build_callback build_callback);
 	// Seamless world experiment (kt): the level's collision mesh and, in the same static model, the
 	// mesh of one more level shifted by `offset`. Tells where that level's triangles lie in the model.
-	void LoadWithChunk(CDB::build_callback build_callback, LPCSTR chunk_cform, const Fvector& offset, const xr_vector<Fbox>& cuts, u32& chunk_tri_base, u32& chunk_tri_count);
+	void LoadWithChunks(CDB::build_callback build_callback, xr_vector<KtCform>& chunks, const xr_vector<Fbox>& cuts);
 	void Create(Fvector* verts, CDB::TRI* tris, const hdrCFORM& H, CDB::build_callback build_callback, bool init_bounds = true);
 	// Occluded/No
 	BOOL RayTest(const Fvector& start, const Fvector& dir, float range, collide::rq_target tgt,
