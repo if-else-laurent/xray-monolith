@@ -39,6 +39,8 @@ void FLOD::Load(LPCSTR N, IReader* data, u32 dwFlags)
 	{
 		data->r(facets[f].v, sizeof(facets[f].v));
 		_vertex* v = facets[f].v;
+		if (g_kt_chunk.loading) // seamless world experiment (kt)
+			for (int k = 0; k < 4; k++) v[k].v.add(g_kt_chunk.offset);
 
 		Fvector N, T;
 		N.set(0, 0, 0);

@@ -58,6 +58,13 @@ void dxRender_Visual::Load(const char* N, IReader* data, u32)
 		if (hdr.shader_id) shader = ::RImplementation.getShader(hdr.shader_id);
 		vis.box.set(hdr.bb.min, hdr.bb.max);
 		vis.sphere.set(hdr.bs.c, hdr.bs.r);
+		if (g_kt_chunk.loading)
+		{
+			// seamless world experiment (kt): a visual of the extra level stands where that level stands
+			vis.box.min.add(g_kt_chunk.offset);
+			vis.box.max.add(g_kt_chunk.offset);
+			vis.sphere.P.add(g_kt_chunk.offset);
+		}
 	}
 	else
 	{

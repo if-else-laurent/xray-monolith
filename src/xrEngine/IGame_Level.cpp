@@ -17,6 +17,34 @@
 //#include "securom_api.h"
 
 ENGINE_API IGame_Level* g_pGameLevel = NULL;
+ENGINE_API KtChunk g_kt_chunk;
+
+// Reads -kt_chunk <level>,<x>,<y>,<z> and checks that the level has what is needed.
+static void kt_chunk_setup()
+{
+	g_kt_chunk = KtChunk();
+	LPCSTR key = strstr(Core.Params, "-kt_chunk ");
+	if (!key) return;
+	string64 name = "";
+	Fvector offset = {0, 0, 0};
+	if (4 != sscanf(key + 10, "%63[^, ],%f,%f,%f", name, &offset.x, &offset.y, &offset.z))
+	{
+		Msg("! [kt chunk] cannot read the key, expected -kt_chunk <level>,<x>,<y>,<z>");
+		return;
+	}
+	string_path file;
+	FS.update_path(file, "$game_levels$", name);
+	xr_strcat(file, "\\level.cform");
+	if (!FS.exist(file))
+	{
+		Msg("! [kt chunk] no such level: %s", file);
+		return;
+	}
+	xr_strcpy(g_kt_chunk.name, name);
+	g_kt_chunk.offset = offset;
+	g_kt_chunk.active = true;
+	Msg("* [kt chunk] level %s is added at %.1f, %.1f, %.1f", name, offset.x, offset.y, offset.z);
+}
 extern BOOL g_bLoaded;
 
 IGame_Level::IGame_Level()
@@ -119,6 +147,17 @@ bool IGame_Level::Load(u32 dwNum)
 	// CForms
 	// g_pGamePersistent->LoadTitle ("st_loading_cform");
 	g_pGamePersistent->LoadTitle();
+	kt_chunk_setup();
+	if (g_kt_chunk.active)
+	{
+		string_path chunk_cform;
+		FS.update_path(chunk_cform, "$game_levels$", g_kt_chunk.name);
+		xr_strcat(chunk_cform, "\\level.cform");
+		ObjectSpace.LoadWithChunk([](Fvector* V, int Vcnt, CDB::TRI* T, int Tcnt, void* params) { g_pGameLevel->Load_GameSpecific_CFORM(T, Tcnt); },
+		                          chunk_cform, g_kt_chunk.offset, g_kt_chunk.tri_base, g_kt_chunk.tri_count);
+		Msg("* [kt chunk] collision: triangles %u..%u of the static model", g_kt_chunk.tri_base, g_kt_chunk.tri_base + g_kt_chunk.tri_count);
+	}
+	else
 	ObjectSpace.Load( [](Fvector* V, int Vcnt, CDB::TRI* T, int Tcnt, void* params){g_pGameLevel->Load_GameSpecific_CFORM(T, Tcnt);});
 	//Sound->set_geometry_occ ( &Static );
 	Sound->set_geometry_occ(ObjectSpace.GetStaticModel());

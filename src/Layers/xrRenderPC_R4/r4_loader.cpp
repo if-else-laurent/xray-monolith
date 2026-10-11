@@ -96,6 +96,10 @@ void CRender::level_Load(IReader* fs)
 	g_pGamePersistent->LoadTitle();
 	LoadSectors(fs);
 
+	// Seamless world experiment (kt): the static geometry of one more level, shifted
+	if (g_kt_chunk.active && !g_dedicated_server)
+		kt_LoadChunk();
+
 	// 3D Fluid
 	Load3DFluid();
 
@@ -138,6 +142,7 @@ void CRender::level_Unload()
 	pOutdoorSector = 0;
 	vLastCameraPos.set(0, 0, 0);
 	// 2.
+	g_kt_chunk.sectors.clear();
 	for (I = 0; I < Sectors.size(); I++) xr_delete(Sectors[I]);
 	Sectors.clear();
 	// 3.
@@ -214,12 +219,15 @@ void CRender::LoadBuffers(CStreamReader* base_fs, BOOL _alternative)
 		CStreamReader* fs = base_fs->open_chunk(fsL_VB);
 		R_ASSERT2(fs, "Could not load geometry. File 'level.geom?' corrupted.");
 		u32 count = fs->r_u32();
-		_DC.resize(count);
-		_VB.resize(count);
+		// kt: a chunk's buffers go after the level's own
+		const u32 vb_base = g_kt_chunk.loading ? u32(_VB.size()) : 0;
+		_DC.resize(vb_base + count);
+		_VB.resize(vb_base + count);
 		u32 bufferSize = (MAXD3DDECLLENGTH + 1) * sizeof(D3DVERTEXELEMENT9);
 		D3DVERTEXELEMENT9* dcl = (D3DVERTEXELEMENT9*)_alloca(bufferSize);
-		for (u32 i = 0; i < count; i++)
+		for (u32 n = 0; n < count; n++)
 		{
+			const u32 i = vb_base + n;
 			// decl
 			//			D3DVERTEXELEMENT9*	dcl		= (D3DVERTEXELEMENT9*) fs().pointer();
 			fs->r(dcl, bufferSize);
@@ -245,6 +253,20 @@ void CRender::LoadBuffers(CStreamReader* base_fs, BOOL _alternative)
 			//	Check if buffer is less then 2048 kb
 			BYTE* pData = xr_alloc<BYTE>(vCount * vSize);
 			fs->r(pData, vCount * vSize);
+			if (g_kt_chunk.loading)
+			{
+				// kt: positions stored as three floats are in world space, shift them with the chunk.
+				// Packed positions (trees) are local to the model and move with its own matrix.
+				int moved = 0;
+				for (D3DVERTEXELEMENT9* e = dcl; e->Stream != 0xff; e++)
+				{
+					if (e->Usage != D3DDECLUSAGE_POSITION || e->UsageIndex != 0 || e->Type != D3DDECLTYPE_FLOAT3) continue;
+					for (u32 v = 0; v < vCount; v++)
+						((Fvector*)(pData + v * vSize + e->Offset))->add(g_kt_chunk.offset);
+					moved = 1;
+				}
+				Msg("* [kt chunk] VB %d: %d verts, positions %s", i, vCount, moved ? "shifted" : "left as they are");
+			}
 			dx10BufferUtils::CreateVertexBuffer(&_VB[i], pData, vCount * vSize);
 			xr_free(pData);
 
@@ -257,9 +279,11 @@ void CRender::LoadBuffers(CStreamReader* base_fs, BOOL _alternative)
 	{
 		CStreamReader* fs = base_fs->open_chunk(fsL_IB);
 		u32 count = fs->r_u32();
-		_IB.resize(count);
-		for (u32 i = 0; i < count; i++)
+		const u32 ib_base = g_kt_chunk.loading ? u32(_IB.size()) : 0;
+		_IB.resize(ib_base + count);
+		for (u32 n = 0; n < count; n++)
 		{
+			const u32 i = ib_base + n;
 			u32 iCount = fs->r_u32();
 			Msg("* [Loading IB] %d indices, %d Kb", iCount, (iCount * 2) / 1024);
 
@@ -282,6 +306,118 @@ void CRender::LoadBuffers(CStreamReader* base_fs, BOOL _alternative)
 		}
 		fs->close();
 	}
+}
+
+// Seamless world experiment (kt). Reads the static geometry of one more level into the same
+// containers the current level uses and lets it be drawn as extra sectors without portals.
+// Left out on purpose: its lights, details, occluders, fog volumes and wallmarks.
+void CRender::kt_LoadChunk()
+{
+	string_path dir, file;
+	FS.update_path(dir, "$game_levels$", g_kt_chunk.name);
+
+	strconcat(sizeof(file), file, dir, "\\level");
+	IReader* fs = FS.r_open(file);
+	if (!fs)
+	{
+		Msg("! [kt chunk] cannot open %s", file);
+		return;
+	}
+
+	kt_base_shader = u32(Shaders.size());
+	kt_base_visual = u32(Visuals.size());
+	kt_base_swi = u32(SWIs.size());
+	kt_base_vb = u32(nVB.size());
+	kt_base_ib = u32(nIB.size());
+	kt_base_xvb = u32(xVB.size());
+	kt_base_xib = u32(xIB.size());
+	const u32 sector_base = u32(Sectors.size());
+	g_kt_chunk.loading = true;
+
+	// Shaders. Lightmaps and LOD atlases are files of the level with the same names in every
+	// level, so the chunk's ones get a prefix the texture loader understands.
+	{
+		IReader* chunk = fs->open_chunk(fsL_SHADERS);
+		R_ASSERT2(chunk, "kt chunk: no shaders in the level file");
+		u32 count = chunk->r_u32();
+		Shaders.resize(kt_base_shader + count);
+		for (u32 i = 0; i < count; i++)
+		{
+			string512 n_sh, n_tlist;
+			LPCSTR n = LPCSTR(chunk->pointer());
+			chunk->skip_stringZ();
+			if (0 == n[0]) continue;
+			xr_strcpy(n_sh, n);
+			LPSTR delim = strchr(n_sh, '/');
+			*delim = 0;
+			n_tlist[0] = 0;
+			string256 token;
+			int tokens = _GetItemCount(delim + 1);
+			for (int t = 0; t < tokens; t++)
+			{
+				_GetItem(delim + 1, t, token);
+				if (t) xr_strcat(n_tlist, ",");
+				if (0 == strncmp(token, "lmap#", 5) || 0 == strncmp(token, "level_lods", 10))
+					xr_strcat(n_tlist, "kt2~");
+				xr_strcat(n_tlist, token);
+			}
+			Shaders[kt_base_shader + i] = dxRenderDeviceRender::Instance().Resources->Create(n_sh, n_tlist);
+		}
+		chunk->close();
+	}
+
+	// Geometry
+	{
+		strconcat(sizeof(file), file, dir, "\\level.geom");
+		CStreamReader* geom = FS.rs_open(0, file);
+		R_ASSERT2(geom, file);
+		LoadBuffers(geom, FALSE);
+		LoadSWIs(geom);
+		FS.r_close(geom);
+
+		strconcat(sizeof(file), file, dir, "\\level.geomx");
+		geom = FS.rs_open(0, file);
+		R_ASSERT2(geom, file);
+		LoadBuffers(geom, TRUE);
+		FS.r_close(geom);
+	}
+
+	// Visuals
+	{
+		IReader* chunk = fs->open_chunk(fsL_VISUALS);
+		LoadVisuals(chunk);
+		chunk->close();
+	}
+
+	// Sectors: only their root visuals. The chunk's portals are not read: its sectors are drawn
+	// whenever the view sees them (CDSGraphManager::traverse).
+	{
+		IReader* S = fs->open_chunk(fsL_SECTORS);
+		for (u32 i = 0; ; i++)
+		{
+			IReader* P = S->open_chunk(i);
+			if (0 == P) break;
+			CSector* sector = xr_new<CSector>();
+			u32 size = P->find_chunk(fsP_Root);
+			R_ASSERT(size == 4);
+			sector->kt_set_root((dxRender_Visual*)getVisual(P->r_u32()));
+			Sectors.push_back(sector);
+			g_kt_chunk.sectors.push_back(sector);
+			P->close();
+		}
+		S->close();
+	}
+
+	g_kt_chunk.loading = false;
+	FS.r_close(fs);
+
+	// The chunk's collision triangles name its sectors by its own numbers.
+	CDB::TRI* tris = g_pGameLevel->ObjectSpace.GetStaticTris();
+	for (u32 i = 0; i < g_kt_chunk.tri_count; i++)
+		tris[g_kt_chunk.tri_base + i].sector += sector_base;
+
+	Msg("* [kt chunk] render: %u shaders, %u visuals, %u sectors, VB %u, IB %u", u32(Shaders.size()) - kt_base_shader,
+	    u32(Visuals.size()) - kt_base_visual, u32(g_kt_chunk.sectors.size()), u32(nVB.size()) - kt_base_vb, u32(nIB.size()) - kt_base_ib);
 }
 
 void CRender::LoadVisuals(IReader* fs)
@@ -411,6 +547,10 @@ void CRender::LoadSWIs(CStreamReader* base_fs)
 		CStreamReader* fs = base_fs->open_chunk(fsL_SWIS);
 		u32 item_count = fs->r_u32();
 
+		// kt: a chunk's items go after the level's own
+		const u32 swi_base = g_kt_chunk.loading ? u32(SWIs.size()) : 0;
+		if (!g_kt_chunk.loading)
+		{
 		xr_vector<FSlideWindowItem>::iterator it = SWIs.begin();
 		xr_vector<FSlideWindowItem>::iterator it_e = SWIs.end();
 
@@ -418,11 +558,13 @@ void CRender::LoadSWIs(CStreamReader* base_fs)
 			xr_free((*it).sw);
 
 		SWIs.clear_not_free();
+		}
 
-		SWIs.resize(item_count);
+		SWIs.resize(swi_base + item_count);
 		for (u32 c = 0; c < item_count; c++)
 		{
-			FSlideWindowItem& swi = SWIs[c];
+			FSlideWindowItem& swi = SWIs[swi_base + c];
+			swi.sw = NULL;
 			swi.reserved[0] = fs->r_u32();
 			swi.reserved[1] = fs->r_u32();
 			swi.reserved[2] = fs->r_u32();

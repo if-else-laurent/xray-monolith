@@ -54,6 +54,28 @@ public:
 };
 
 //-----------------------------------------------------------------------------------------------------------
+// Seamless world experiment (kt): one more level loaded next to the current one, shifted in space.
+// Asked for on the command line: -kt_chunk <level folder>,<x>,<y>,<z>
+// Only its static geometry and its collision mesh are taken; no AI map, no objects, no details.
+struct ENGINE_API KtChunk
+{
+	bool active; // asked for and found
+	bool loading; // the renderer is reading the chunk's files right now
+	string64 name;
+	Fvector offset;
+	u32 tri_base; // first triangle of the chunk in the merged static collision model
+	u32 tri_count;
+	xr_vector<void*> sectors; // CSector* of the chunk, drawn whenever they are in view
+
+	KtChunk() : active(false), loading(false), tri_base(0), tri_count(0)
+	{
+		name[0] = 0;
+		offset.set(0, 0, 0);
+	}
+};
+
+extern ENGINE_API KtChunk g_kt_chunk;
+
 class ENGINE_API IGame_Level :
 	public DLL_Pure,
 	public IInputReceiver,

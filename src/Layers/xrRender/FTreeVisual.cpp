@@ -75,6 +75,7 @@ void FTreeVisual::Load(const char* N, IReader* data, u32 dwFlags)
 	R_ASSERT(data->find_chunk(OGF_TREEDEF2));
 	{
 		data->r(&xform, sizeof(xform));
+		if (g_kt_chunk.loading) xform.c.add(g_kt_chunk.offset); // seamless world experiment (kt)
 		data->r(&c_scale, sizeof(c_scale));
 		c_scale.rgb.mul(.5f);
 		c_scale.hemi *= .5f;

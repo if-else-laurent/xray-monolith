@@ -68,6 +68,11 @@ void CDSGraphManager::traverse(CSector* start, CFrustum& F, Fvector& vBase, Fmat
 	m_sector_frustums.clear();
 	m_static_seen.clear();
 	i_start->traverse(std::move(F),*this);
+
+	// Seamless world experiment (kt): the sectors of the extra level have no portals to be reached
+	// through, so they are offered to every view; their geometry is still culled by the frustum.
+	for (void* sector : g_kt_chunk.sectors)
+		m_sector_frustums.insert((CSector*)sector)->val.first.push_back(i_frustum);
 }
 
 void CDSGraphManager::set_Object(IRenderable* O)

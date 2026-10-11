@@ -370,6 +370,14 @@ ID3DBaseTexture* CRender::texture_load(LPCSTR fRName, u32& ret_msize, bool bStag
 			goto _DDS_2D;
 		}
 	}
+	if (0 == strncmp(fname, "kt2~", 4))
+	{
+		// seamless world experiment (kt): a lightmap or a LOD atlas of the extra level
+		string_path chunk_file;
+		strconcat(sizeof(chunk_file), chunk_file, g_kt_chunk.name, "\\", fname + 4, ".dds");
+		if (FS.exist(fn, "$game_levels$", chunk_file)) goto _DDS;
+		Msg("! [kt chunk] texture not found: %s", chunk_file);
+	}
 	if (FS.exist(fn, "$level$", fname, ".dds")) goto _DDS;
 	if (FS.exist(fn, "$game_saves$", fname, ".dds")) goto _DDS;
 	if (FS.exist(fn, "$game_textures$", fname, ".dds")) goto _DDS;

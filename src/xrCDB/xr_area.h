@@ -52,6 +52,9 @@ public:
 	void Load(CDB::build_callback build_callback);
 	void Load(LPCSTR path, LPCSTR fname, CDB::build_callback build_callback);
 	void Load(IReader* R, CDB::build_callback build_callback);
+	// Seamless world experiment (kt): the level's collision mesh and, in the same static model, the
+	// mesh of one more level shifted by `offset`. Tells where that level's triangles lie in the model.
+	void LoadWithChunk(CDB::build_callback build_callback, LPCSTR chunk_cform, const Fvector& offset, u32& chunk_tri_base, u32& chunk_tri_count);
 	void Create(Fvector* verts, CDB::TRI* tris, const hdrCFORM& H, CDB::build_callback build_callback, bool init_bounds = true);
 	// Occluded/No
 	BOOL RayTest(const Fvector& start, const Fvector& dir, float range, collide::rq_target tgt,

@@ -128,6 +128,69 @@ void CObjectSpace::Load(IReader* F, CDB::build_callback build_callback)
 	});
 }
 
+void CObjectSpace::LoadWithChunk(CDB::build_callback build_callback, LPCSTR chunk_cform, const Fvector& offset, u32& chunk_tri_base, u32& chunk_tri_count)
+{
+	IReader* F = FS.r_open("$level$", "level.cform");
+	R_ASSERT(F);
+	IReader* F2 = FS.r_open(chunk_cform);
+	R_ASSERT2(F2, chunk_cform);
+
+	hdrCFORM H, H2;
+	F->r(&H, sizeof(hdrCFORM));
+	F2->r(&H2, sizeof(hdrCFORM));
+	R_ASSERT(CFORM_CURRENT_VERSION == H.version);
+	R_ASSERT(CFORM_CURRENT_VERSION == H2.version);
+
+	Fvector* verts = (Fvector*)F->pointer();
+	CDB::TRI* tris = (CDB::TRI*)(verts + H.vertcount);
+	Fvector* verts2 = (Fvector*)F2->pointer();
+	CDB::TRI* tris2 = (CDB::TRI*)(verts2 + H2.vertcount);
+
+	// One model for both: the vertices of the chunk are shifted, its triangles point at them.
+	u32 vert_count = H.vertcount + H2.vertcount;
+	u32 tri_count = H.facecount + H2.facecount;
+	Fvector* all_verts = xr_alloc<Fvector>(vert_count);
+	CDB::TRI* all_tris = xr_alloc<CDB::TRI>(tri_count);
+	CopyMemory(all_verts, verts, H.vertcount * sizeof(Fvector));
+	CopyMemory(all_tris, tris, H.facecount * sizeof(CDB::TRI));
+	for (u32 i = 0; i < H2.vertcount; i++)
+		all_verts[H.vertcount + i].add(verts2[i], offset);
+	for (u32 i = 0; i < H2.facecount; i++)
+	{
+		CDB::TRI T = tris2[i];
+		T.verts[0] += H.vertcount;
+		T.verts[1] += H.vertcount;
+		T.verts[2] += H.vertcount;
+		all_tris[H.facecount + i] = T;
+	}
+	chunk_tri_base = H.facecount;
+	chunk_tri_count = H2.facecount;
+
+	Fbox box2 = H2.aabb;
+	box2.min.add(offset);
+	box2.max.add(offset);
+	m_BoundingVolume.set(H.aabb);
+	m_BoundingVolume.merge(box2);
+
+	g_SpatialSpace->initialize(m_BoundingVolume);
+	g_SpatialSpacePhysic->initialize(m_BoundingVolume);
+	g_SpatialSpaceLights->initialize(m_BoundingVolume);
+
+	Static.build_arrays(all_verts, vert_count, all_tris, tri_count, build_callback);
+	xr_free(all_verts);
+	xr_free(all_tris);
+	FS.r_close(F);
+	FS.r_close(F2);
+
+	const DWORD this_thread_id = GetCurrentThreadId();
+	Static.async_cform_load.run([this, this_thread_id]()
+	{
+		if (this_thread_id != GetCurrentThreadId()) { PROF_THREAD("X-Ray PPL Thread") }
+		PROF_EVENT("Async cform tree build");
+		Static.build_tree();
+	});
+}
+
 void CObjectSpace::Create(Fvector* verts, CDB::TRI* tris, const hdrCFORM& H, CDB::build_callback build_callback, bool init_bounds)
 {
 	Static.build(verts, H.vertcount, tris, H.facecount, build_callback);

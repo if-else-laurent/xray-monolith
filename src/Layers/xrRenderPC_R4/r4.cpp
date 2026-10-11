@@ -696,6 +696,7 @@ bool CRender::models_Exists(LPCSTR name) { return Models->Exists(name); }
 
 ref_shader CRender::getShader(int id)
 {
+	if (g_kt_chunk.loading) id += kt_base_shader;
 	VERIFY(id<int(Shaders.size()));
 	return Shaders[id];
 }
@@ -718,12 +719,14 @@ IRender_Sector* CRender::getSectorActive() { return pLastSector; }
 
 IRenderVisual* CRender::getVisual(int id)
 {
+	if (g_kt_chunk.loading) id += kt_base_visual;
 	VERIFY(id<int(Visuals.size()));
 	return Visuals[id];
 }
 
 D3DVERTEXELEMENT9* CRender::getVB_Format(int id, BOOL _alt)
 {
+	if (g_kt_chunk.loading) id += _alt ? kt_base_xvb : kt_base_vb;
 	if (_alt)
 	{
 		VERIFY(id<int(xDC.size()));
@@ -738,6 +741,7 @@ D3DVERTEXELEMENT9* CRender::getVB_Format(int id, BOOL _alt)
 
 ID3DVertexBuffer* CRender::getVB(int id, BOOL _alt)
 {
+	if (g_kt_chunk.loading) id += _alt ? kt_base_xvb : kt_base_vb;
 	if (_alt)
 	{
 		VERIFY(id<int(xVB.size()));
@@ -752,6 +756,7 @@ ID3DVertexBuffer* CRender::getVB(int id, BOOL _alt)
 
 ID3DIndexBuffer* CRender::getIB(int id, BOOL _alt)
 {
+	if (g_kt_chunk.loading) id += _alt ? kt_base_xib : kt_base_ib;
 	if (_alt)
 	{
 		VERIFY(id<int(xIB.size()));
@@ -766,6 +771,7 @@ ID3DIndexBuffer* CRender::getIB(int id, BOOL _alt)
 
 FSlideWindowItem* CRender::getSWI(int id)
 {
+	if (g_kt_chunk.loading) id += kt_base_swi;
 	VERIFY(id<int(SWIs.size()));
 	return &SWIs[id];
 }
