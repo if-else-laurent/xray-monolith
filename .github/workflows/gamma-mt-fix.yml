@@ -45,7 +45,7 @@ jobs:
 
     - name: Build ${{matrix.buildconf}}
       working-directory: ${{env.GITHUB_WORKSPACE}}
-      run: msbuild /p:Configuration=${{matrix.buildconf}} ${{env.SOLUTION_FILE_PATH}}
+      run: msbuild /m /p:Configuration=${{matrix.buildconf}} ${{env.SOLUTION_FILE_PATH}}
 
     - name: Upload Exe
       uses: actions/upload-artifact@v4.6.0
