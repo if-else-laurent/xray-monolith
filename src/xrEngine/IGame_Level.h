@@ -161,6 +161,27 @@ struct ENGINE_API KtChunk
 	// when the camera is further than <out> metres from its walkable box and taken in again nearer
 	// than <in>. 0 - everything stays loaded.
 	float stream_in, stream_out;
+	// -kt_trim <piece>,<px>,<pz>,<nx>,<nz>,<radius>, any number: the AI nodes of the piece (0 the level,
+	// 1.. the attached levels) that lie beyond the line through (px, pz) on the side the normal
+	// points to, within the radius, are taken out of the map: nothing leads to them. Two levels
+	// joined road to road overlap with their tails; each is trimmed at the line of the joint.
+	struct Trim
+	{
+		u32 piece;
+		float px, pz, nx, nz, radius;
+	};
+	xr_vector<Trim> trims;
+	bool trimmed(u32 piece, float x, float z) const
+	{
+		for (u32 i = 0; i < trims.size(); i++)
+		{
+			const Trim& T = trims[i];
+			if (T.piece != piece) continue;
+			const float dx = x - T.px, dz = z - T.pz;
+			if (dx * T.nx + dz * T.nz > 0.f && dx * dx + dz * dz <= T.radius * T.radius) return true;
+		}
+		return false;
+	}
 	// The level itself is let go and taken in by the same rule, when the player is deep in a neighbour.
 	bool base_loaded, base_wanted, base_manual, base_has_walk;
 	Fbox base_walk;

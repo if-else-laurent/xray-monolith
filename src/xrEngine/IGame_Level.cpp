@@ -145,6 +145,16 @@ static void kt_chunk_setup()
 		sscanf(k + 18, "%f", &g_kt_chunk.static_radius);
 		Msg("* [kt world] objects that stay online on the level leave beyond %.0f m", g_kt_chunk.static_radius);
 	}
+	for (LPCSTR k = strstr(Core.Params, "-kt_trim "); k; k = strstr(k + 1, "-kt_trim "))
+	{
+		KtChunk::Trim T;
+		if (6 != sscanf(k + 9, "%u,%f,%f,%f,%f,%f", &T.piece, &T.px, &T.pz, &T.nx, &T.nz, &T.radius))
+		{
+			Msg("! [kt chunk] cannot read the key, expected -kt_trim <piece>,<px>,<pz>,<nx>,<nz>,<radius>");
+			continue;
+		}
+		g_kt_chunk.trims.push_back(T);
+	}
 	if (LPCSTR k = strstr(Core.Params, "-kt_stream "))
 	{
 		sscanf(k + 11, "%f,%f", &g_kt_chunk.stream_in, &g_kt_chunk.stream_out);

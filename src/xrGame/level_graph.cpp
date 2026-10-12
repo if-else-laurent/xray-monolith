@@ -237,6 +237,37 @@ void CLevelGraph::kt_merge_chunk()
 				if (N.link(k) != invalid) N.link(k, H1.count + place[N.link(k)]);
 		}
 
+		// Trimmed tails (-kt_trim): the nodes beyond the line of a joint lose every link, and are not
+		// offered to the stitching below. They keep their numbers: the spawn data refers to them.
+		xr_vector<u8> dead(HM.count, 0);
+		u32 trimmed = 0;
+		if (!g_kt_chunk.trims.empty())
+		{
+			for (u32 i = 0; i < HM.count; i++)
+			{
+				u32 number = 0;
+				if (i >= H1.count)
+				{
+					const int chunk = pieces[origin_sorted[i - H1.count] - 1].chunk;
+					if (chunk < 0) continue;
+					number = u32(chunk) + 1;
+				}
+				const float x = float(NM[i].p.xz() / row) * cell + HM.aabb.min.x;
+				const float z = float(NM[i].p.xz() % row) * cell + HM.aabb.min.z;
+				if (!g_kt_chunk.trimmed(number, x, z)) continue;
+				dead[i] = 1;
+				trimmed++;
+			}
+			for (u32 i = 0; i < HM.count; i++)
+				for (u8 k = 0; k < 4; k++)
+				{
+					const u32 to = NM[i].link(k);
+					if (to == invalid) continue;
+					if (dead[i] || dead[to]) NM[i].link(k, invalid);
+				}
+			Msg("* [kt chunk] AI map: %u nodes beyond the lines of the joints are taken out", trimmed);
+		}
+
 		// Neighbours across the borders. Links: 0 is x-1, 1 is z+1, 2 is x+1, 3 is z-1.
 		static const int dx[4] = {-1, 0, 1, 0};
 		static const int dz[4] = {0, 1, 0, -1};
@@ -245,6 +276,7 @@ void CLevelGraph::kt_merge_chunk()
 		for (u32 i = H1.count; i < HM.count; i++)
 		{
 			NodeCompressed& N = NM[i];
+			if (dead[i]) continue;
 			const u8 mine = origin_sorted[i - H1.count];
 			for (u8 k = 0; k < 4; k++)
 			{
@@ -270,6 +302,7 @@ void CLevelGraph::kt_merge_chunk()
 					{
 						const u8 theirs = (r == 0) ? u8(0) : origin_sorted[u32(M - NM) - H1.count];
 						if (theirs == mine) continue;
+						if (dead[u32(M - NM)]) continue;
 						if (M->link(back) != invalid) continue;
 						if (_abs((float(M->p.y()) / 65535) * HM.size_y - y) > 1.f) continue;
 						N.link(k, u32(M - NM));
