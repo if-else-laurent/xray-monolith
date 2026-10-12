@@ -276,6 +276,8 @@ void CPHObject::UnFreeze()
 	ph_world->AddObject(this);
 }
 
+// Without whole program optimization nobody else emits the members of this list (LNK2019 on its iterator).
+template class CPHItemList<CPHUpdateObject>;
 
 CPHUpdateObject::CPHUpdateObject()
 {
