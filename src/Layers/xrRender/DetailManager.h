@@ -188,6 +188,7 @@ public:
 	};
 	xr_vector<KtGrass> kt_grass;
 	bool kt_slot(const KtGrass& G, float wx, float wz, DetailSlot& DS);
+	static u32 kt_wide(u32 id);
 	DetailSlot DS_empty;
 
 public:

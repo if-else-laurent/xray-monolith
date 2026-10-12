@@ -180,7 +180,7 @@ void CDetailManager::cache_Decompress(Slot* S)
 			u32 index = selected[0];
 #endif
 
-			CDetail* Dobj = objects[DS.r_id(index)];
+			CDetail* Dobj = objects[D.G[index].id]; // kt: the wide number the cache task put down
 			SlotItem* ItemP = poolSI.create();
 			SlotItem& Item = *ItemP;
 

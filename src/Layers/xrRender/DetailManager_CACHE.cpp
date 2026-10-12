@@ -62,7 +62,7 @@ void CDetailManager::cache_Task(int gx, int gz, Slot* D)
 
 	for (u32 i = 0; i < dm_obj_in_slot; i++)
 	{
-		D->G[i].id = DS.r_id(i);
+		D->G[i].id = kt_wide(DS.r_id(i));
 		for (u32 clr = 0; clr < D->G[i].items.size(); clr++)
 			poolSI.destroy(D->G[i].items[clr]);
 		D->G[i].items.clear();
@@ -234,6 +234,18 @@ void CDetailManager::cache_Update(int v_x, int v_z, Fvector& view, int limit)
 	}
 }
 
+// kt: the base of the models' numbers for the slot QueryDB gave last on this thread (0: the level's own)
+static thread_local u32 kt_query_base = 0;
+
+u32 CDetailManager::kt_wide(u32 id)
+{
+	if (id == u32(DetailSlot::ID_Empty)) return id;
+	u32 wide = id + kt_query_base;
+	// number 63 means "no model" everywhere; the models that would get it and above stand one further
+	if (kt_query_base < u32(DetailSlot::ID_Empty) && wide >= u32(DetailSlot::ID_Empty)) wide++;
+	return wide;
+}
+
 // kt: the slot of an extra level's grass that covers the world point; false when it has none there
 bool CDetailManager::kt_slot(const KtGrass& G, float wx, float wz, DetailSlot& DS)
 {
@@ -242,14 +254,16 @@ bool CDetailManager::kt_slot(const KtGrass& G, float wx, float wz, DetailSlot& D
 	if (!((db_x >= 0) && (db_x < int(G.H.size_x)) && (db_z >= 0) && (db_z < int(G.H.size_z)))) return false;
 	DS = G.slots[db_z * G.H.size_x + db_x];
 	if ((DS.id0 == DetailSlot::ID_Empty) && (DS.id1 == DetailSlot::ID_Empty) && (DS.id2 == DetailSlot::ID_Empty) && (DS.id3 == DetailSlot::ID_Empty)) return false;
-	for (u32 i = 0; i < 4; i++)
-		if (DS.r_id(i) != DetailSlot::ID_Empty) DS.w_id(i, u8(DS.r_id(i) + G.id_base));
+	// the models' numbers stay the file's own: a slot has six bits for one, and the models of all
+	// the levels together are more than that. Whoever takes the slot adds the base (kt_wide).
+	kt_query_base = G.id_base;
 	DS.w_y(DS.r_ybase() + G.offset.y, DS.r_yheight() + .3f);
 	return true;
 }
 
 DetailSlot& CDetailManager::QueryDB(int sx, int sz)
 {
+	kt_query_base = 0;
 	// Seamless world experiment (kt): on an extra level's land its own grass is shown. The slot is
 	// taken from its file at the place this world slot covers there, its models renumbered and its
 	// height moved with the level. The grids of slots do not coincide, so the grass lies up to a

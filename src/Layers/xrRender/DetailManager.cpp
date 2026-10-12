@@ -233,20 +233,31 @@ void CDetailManager::Load()
 			KtGrass G;
 			G.fs = FS.r_open(file);
 			G.fs->r_chunk_safe(0, &G.H, sizeof(G.H));
-			if (G.H.version != DETAIL_VERSION || objects.size() + G.H.object_count >= u32(DetailSlot::ID_Empty))
+			if (G.H.version != DETAIL_VERSION || objects.size() + G.H.object_count + 1 >= u32(dm_max_objects))
 			{
-				Msg("! [kt chunk] grass of %s is left out: %u models and %u already there do not fit 63", g_kt_chunk.pieces[piece].name, G.H.object_count, u32(objects.size()));
+				Msg("! [kt chunk] grass of %s is left out: %u models and %u already there do not fit the list", g_kt_chunk.pieces[piece].name, G.H.object_count, u32(objects.size()));
 				FS.r_close(G.fs);
 				continue;
 			}
 			G.piece = piece;
 			G.offset = g_kt_chunk.pieces[piece].offset;
-			G.id_base = u32(objects.size());
 			g_kt_chunk.select(piece);
 			g_kt_chunk.loading = true; // the models' texture is the level's own atlas: named by the piece
 			IReader* models = G.fs->open_chunk(1);
+			G.id_base = u32(objects.size());
+			if (G.id_base == u32(DetailSlot::ID_Empty) && G.H.object_count) G.id_base++; // see below
 			for (u32 m_id = 0; m_id < G.H.object_count; m_id++)
 			{
+				// Number 63 means "no model" in a slot, so the model that would stand there is put in
+				// twice: the copy fills the place nobody points at (CDetailManager::kt_wide).
+				if (objects.size() == u32(DetailSlot::ID_Empty))
+				{
+					CDetail* pad = xr_new<CDetail>();
+					IReader* P = models->open_chunk(m_id);
+					pad->Load(P);
+					objects.push_back(pad);
+					P->close();
+				}
 				CDetail* dt = xr_new<CDetail>();
 				IReader* S = models->open_chunk(m_id);
 				dt->Load(S);
