@@ -161,6 +161,9 @@ struct ENGINE_API KtChunk
 	// when the camera is further than <out> metres from its walkable box and taken in again nearer
 	// than <in>. 0 - everything stays loaded.
 	float stream_in, stream_out;
+	// The level itself is let go and taken in by the same rule, when the player is deep in a neighbour.
+	bool base_loaded, base_wanted, base_manual, base_has_walk;
+	Fbox base_walk;
 	// the piece whose files are being read by the renderer: 0 the level, 1.. the chunks
 	u32 reading() const { return loading ? current + 1 : 0; }
 
@@ -179,7 +182,7 @@ struct ENGINE_API KtChunk
 		return strict && (foreign(piece, a.x, a.z) || foreign(piece, b.x, b.z) || foreign(piece, c.x, c.z));
 	}
 
-	KtChunk() : configured(false), active(false), loading(false), current(0), fake_material(u32(-1)), static_radius(0), stream_in(0), stream_out(0), mask_x0(0), mask_z0(0), mask_cell(1), mask_nx(0), mask_nz(0), mask_pieces(0)
+	KtChunk() : configured(false), active(false), loading(false), current(0), fake_material(u32(-1)), static_radius(0), stream_in(0), stream_out(0), base_loaded(true), base_wanted(true), base_manual(false), base_has_walk(false), mask_x0(0), mask_z0(0), mask_cell(1), mask_nx(0), mask_nz(0), mask_pieces(0)
 	{
 		name[0] = 0;
 		base[0] = 0;

@@ -435,14 +435,21 @@ public:
 
 	virtual void Execute(LPCSTR args)
 	{
-		u32 number = 0;
+		int number = 0;
 		int mode = 0;
-		if (2 == sscanf(args, "%u %d", &number, &mode) && number < g_kt_chunk.pieces.size())
+		const int read = sscanf(args, "%d %d", &number, &mode);
+		if (2 == read && number == -1) // the level itself
+		{
+			g_kt_chunk.base_manual = mode != 2;
+			if (mode != 2) g_kt_chunk.base_wanted = mode == 1;
+		}
+		else if (2 == read && number >= 0 && number < int(g_kt_chunk.pieces.size()))
 		{
 			KtPiece& P = g_kt_chunk.pieces[number];
 			P.manual = mode != 2;
 			if (mode != 2) P.wanted = mode == 1;
 		}
+		Msg("* [kt stream] piece -1, the level itself: %s%s", g_kt_chunk.base_loaded ? "loaded" : "let go", g_kt_chunk.base_manual ? ", by hand" : "");
 		for (u32 i = 0; i < g_kt_chunk.pieces.size(); i++)
 			Msg("* [kt stream] piece %u %s: %s%s", i, g_kt_chunk.pieces[i].name, g_kt_chunk.pieces[i].loaded ? "loaded" : "let go",
 			    g_kt_chunk.pieces[i].manual ? ", by hand" : "");

@@ -284,6 +284,16 @@ DetailSlot& CDetailManager::QueryDB(int sx, int sz)
 			for (u32 i = 0; i < kt_grass.size(); i++)
 				if (kt_grass[i].piece + 1 >= g_kt_chunk.mask_pieces && g_kt_chunk.pieces[kt_grass[i].piece].loaded && kt_slot(kt_grass[i], wx, wz, DS)) return DS;
 	}
+	if (g_kt_chunk.active && !g_kt_chunk.base_loaded)
+	{
+		// the level itself is let go on the move: no grass of its own
+		static thread_local DetailSlot none;
+		none.w_id(0, DetailSlot::ID_Empty);
+		none.w_id(1, DetailSlot::ID_Empty);
+		none.w_id(2, DetailSlot::ID_Empty);
+		none.w_id(3, DetailSlot::ID_Empty);
+		return none;
+	}
 	int db_x = sx + dtH.offs_x;
 	int db_z = sz + dtH.offs_z;
 	if ((db_x >= 0) && (db_x < int(dtH.size_x)) && (db_z >= 0) && (db_z < int(dtH.size_z)))

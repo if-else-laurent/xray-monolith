@@ -295,6 +295,14 @@ static bool kt_cform_cut(u32 piece, u32 material, const Fvector& a, const Fvecto
 // part of the world that is always there.
 // kt_fresh, kt_stream_state (0 idle, 1 building, 2 built) and kt_stream_task stand above, by the destructor
 static xr_vector<KtCform> kt_stream_job;
+static bool kt_stream_job_base = true;
+
+static float kt_box_distance(const Fbox& box, const Fvector& C)
+{
+	const float dx = _max(_max(box.min.x - C.x, C.x - box.max.x), 0.f);
+	const float dz = _max(_max(box.min.z - C.z, C.z - box.max.z), 0.f);
+	return _sqrt(dx * dx + dz * dz);
+}
 static CTimer kt_stream_timer;
 
 void IGame_Level::kt_stream_tick()
@@ -310,15 +318,24 @@ void IGame_Level::kt_stream_tick()
 			KtPiece& P = pieces[i];
 			if (!P.manual && P.has_walk && g_kt_chunk.stream_in > 0.f)
 			{
-				const Fvector& C = Device.vCameraPosition;
-				const float dx = _max(_max(P.walk.min.x - C.x, C.x - P.walk.max.x), 0.f);
-				const float dz = _max(_max(P.walk.min.z - C.z, C.z - P.walk.max.z), 0.f);
-				const float distance = _sqrt(dx * dx + dz * dz);
+				const float distance = kt_box_distance(P.walk, Device.vCameraPosition);
 				if (P.loaded && distance > g_kt_chunk.stream_out) P.wanted = false;
 				else if (!P.loaded && distance < g_kt_chunk.stream_in) P.wanted = true;
 			}
 			if (P.wanted != P.loaded) change = true;
 		}
+		if (!g_kt_chunk.base_manual && g_kt_chunk.base_has_walk && g_kt_chunk.stream_in > 0.f)
+		{
+			const float distance = kt_box_distance(g_kt_chunk.base_walk, Device.vCameraPosition);
+			if (g_kt_chunk.base_loaded && distance > g_kt_chunk.stream_out) g_kt_chunk.base_wanted = false;
+			else if (!g_kt_chunk.base_loaded && distance < g_kt_chunk.stream_in) g_kt_chunk.base_wanted = true;
+		}
+		// something walkable must stay
+		bool any = g_kt_chunk.base_wanted;
+		for (u32 i = 0; i < pieces.size(); i++)
+			if (pieces[i].wanted && pieces[i].has_walk) any = true;
+		if (!any) g_kt_chunk.base_wanted = true;
+		if (g_kt_chunk.base_wanted != g_kt_chunk.base_loaded) change = true;
 		if (!change) return;
 
 		kt_stream_job.clear();
@@ -333,12 +350,13 @@ void IGame_Level::kt_stream_tick()
 			form.tri_base = form.tri_count = 0;
 			kt_stream_job.push_back(form);
 		}
+		kt_stream_job_base = g_kt_chunk.base_wanted;
 		kt_fresh = xr_new<CDB::MODEL>();
 		kt_stream_state = 1;
 		kt_stream_timer.Start();
 		kt_stream_task.run([this]()
 		{
-			ObjectSpace.kt_BuildModel(*kt_fresh, kt_cform_built, kt_stream_job, kt_cform_cut);
+			ObjectSpace.kt_BuildModel(*kt_fresh, kt_stream_job_base, kt_cform_built, kt_stream_job, kt_cform_cut);
 			kt_stream_state = 2;
 		});
 		return;
@@ -365,6 +383,12 @@ void IGame_Level::kt_stream_tick()
 		stays[kt_stream_job[n].piece] = 1;
 	}
 	string256 gone = "", come = "";
+	if (g_kt_chunk.base_loaded && !kt_stream_job_base)
+	{
+		Render->kt_base_render(false);
+		g_kt_chunk.base_loaded = false;
+		xr_strcat(gone, " the level itself");
+	}
 	for (u32 i = 0; i < pieces.size(); i++)
 		if (pieces[i].loaded && !stays[i])
 		{
@@ -386,6 +410,12 @@ void IGame_Level::kt_stream_tick()
 			xr_strcat(come, " ");
 			xr_strcat(come, pieces[i].name);
 		}
+	}
+	if (!g_kt_chunk.base_loaded && kt_stream_job_base)
+	{
+		Render->kt_base_render(true);
+		g_kt_chunk.base_loaded = true;
+		xr_strcat(come, " the level itself");
 	}
 	Sound->set_geometry_occ(ObjectSpace.GetStaticModel());
 	Msg("* [kt stream] let go:%s; taken in:%s. Collisions built aside in %u ms; on the main thread: swap %u, old model freed %u, geometry dropped %u, geometry read %u ms",
@@ -439,6 +469,18 @@ bool IGame_Level::Load(u32 dwNum)
 			g_kt_chunk.pieces[i].manual = false;
 		}
 		ObjectSpace.LoadWithChunks(kt_cform_built, cforms, kt_cform_cut);
+		g_kt_chunk.base_loaded = g_kt_chunk.base_wanted = true;
+		g_kt_chunk.base_manual = g_kt_chunk.base_has_walk = false;
+		if (IReader* R = FS.r_open("$level$", "level.ai"))
+		{
+			if (R->length() >= 40)
+			{
+				R->advance(16);
+				R->r(&g_kt_chunk.base_walk, sizeof(Fbox));
+				g_kt_chunk.base_has_walk = true;
+			}
+			FS.r_close(R);
+		}
 		for (u32 i = 0; i < cforms.size(); i++)
 		{
 			g_kt_chunk.pieces[i].tri_base = cforms[i].tri_base;

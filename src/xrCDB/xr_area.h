@@ -68,7 +68,7 @@ public:
 	// Seamless world experiment (kt): the level's collision mesh and, in the same static model, the
 	// mesh of one more level shifted by `offset`. Tells where that level's triangles lie in the model.
 	void LoadWithChunks(CDB::build_callback build_callback, xr_vector<KtCform>& chunks, bool (*cut)(u32 piece, u32 material, const Fvector& a, const Fvector& b, const Fvector& c));
-	void kt_BuildModel(CDB::MODEL& target, CDB::build_callback build_callback, xr_vector<KtCform>& chunks, bool (*cut)(u32 piece, u32 material, const Fvector& a, const Fvector& b, const Fvector& c));
+	void kt_BuildModel(CDB::MODEL& target, bool base, CDB::build_callback build_callback, xr_vector<KtCform>& chunks, bool (*cut)(u32 piece, u32 material, const Fvector& a, const Fvector& b, const Fvector& c));
 	void kt_SwapStatic(CDB::MODEL& fresh);
 	void Create(Fvector* verts, CDB::TRI* tris, const hdrCFORM& H, CDB::build_callback build_callback, bool init_bounds = true);
 	// Occluded/No

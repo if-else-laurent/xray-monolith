@@ -323,6 +323,7 @@ public:
 	// collision triangles told its sectors again after the static model was rebuilt
 	virtual void kt_piece_render(u32 piece, bool on) {}
 	virtual void kt_piece_sectors(u32 piece) {}
+	virtual void kt_base_render(bool on) {}
 
 	virtual size_t SectorsCount() { return size_t(0); }
 

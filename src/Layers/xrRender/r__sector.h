@@ -56,6 +56,7 @@ public:
 	dxRender_Visual* root() { return m_root; }
 	void kt_set_root(dxRender_Visual* V) { m_root = V; kt_chunk = true; } // seamless world experiment: a sector of a chunk has no portals
 	bool kt_chunk = false; // a sector of a level standing next to this one
+	void kt_root(dxRender_Visual* V) { m_root = V; } // the level's own sector while the level is let go and when it is back
 	void traverse(CFrustum&& F, CDSGraphManager& DM);
 	void load(IReader& fs);
 

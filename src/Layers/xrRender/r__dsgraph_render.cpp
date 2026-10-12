@@ -462,7 +462,7 @@ void CDSGraphManager::r_dsgraph_capture_static()
 							++dbg->static_add_root_calls_noopt;
 						}
 					}
-					add_Static((IRenderVisual*)pair.key->root(), frustums.front(), frustums.front().getMask());
+					if (pair.key->root()) add_Static((IRenderVisual*)pair.key->root(), frustums.front(), frustums.front().getMask());
 					continue;
 				}
 

@@ -27,6 +27,8 @@ void CRender::level_Load(IReader* fs)
 
 	// Begin
 	pApp->LoadBegin();
+	kt_base_reading = false;
+	kt_base_on = true;
 	dxRenderDeviceRender::Instance().Resources->DeferredLoad(TRUE);
 	IReader* chunk;
 
@@ -106,6 +108,11 @@ void CRender::level_Load(IReader* fs)
 	//	g_pGamePersistent->LoadTitle("st_loading_sectors_portals");
 	g_pGamePersistent->LoadTitle();
 	LoadSectors(fs);
+
+	kt_base.shaders = u32(Shaders.size()); kt_base.visuals = u32(Visuals.size()); kt_base.sectors = u32(Sectors.size());
+	kt_base.vb = u32(nVB.size()); kt_base.ib = u32(nIB.size()); kt_base.xvb = u32(xVB.size()); kt_base.xib = u32(xIB.size());
+	kt_base_on = true;
+	kt_base_reading = false;
 
 	// Seamless world experiment (kt): the static geometry of one more level, shifted
 	if (g_kt_chunk.active && !g_dedicated_server)
@@ -256,8 +263,9 @@ void CRender::LoadBuffers(CStreamReader* base_fs, BOOL _alternative)
 		u32 count = fs->r_u32();
 		// kt: a chunk's buffers go after the level's own
 		const u32 vb_base = g_kt_chunk.loading ? u32(_VB.size()) : 0;
-		_DC.resize(vb_base + count);
-		_VB.resize(vb_base + count);
+		// (the level's own buffers read again on the move go to their old places, the pieces' follow them)
+		if (_DC.size() < vb_base + count) _DC.resize(vb_base + count);
+		if (_VB.size() < vb_base + count) _VB.resize(vb_base + count);
 		u32 bufferSize = (MAXD3DDECLLENGTH + 1) * sizeof(D3DVERTEXELEMENT9);
 		D3DVERTEXELEMENT9* dcl = (D3DVERTEXELEMENT9*)_alloca(bufferSize);
 		kt_kept.resize(count);
@@ -338,7 +346,7 @@ void CRender::LoadBuffers(CStreamReader* base_fs, BOOL _alternative)
 		CStreamReader* fs = base_fs->open_chunk(fsL_IB);
 		u32 count = fs->r_u32();
 		const u32 ib_base = g_kt_chunk.loading ? u32(_IB.size()) : 0;
-		_IB.resize(ib_base + count);
+		if (_IB.size() < ib_base + count) _IB.resize(ib_base + count);
 		for (u32 n = 0; n < count; n++)
 		{
 			const u32 i = ib_base + n;
@@ -505,6 +513,9 @@ void CRender::kt_LoadChunk(u32 piece)
 		return;
 	}
 
+	CTimer kt_stage;
+	kt_stage.Start();
+	u32 kt_ms_shaders = 0, kt_ms_buffers = 0, kt_ms_visuals = 0;
 	kt_base_shader = u32(Shaders.size());
 	kt_base_visual = u32(Visuals.size());
 	kt_base_vb = u32(nVB.size());
@@ -553,6 +564,7 @@ void CRender::kt_LoadChunk(u32 piece)
 		chunk->close();
 	}
 
+	kt_ms_shaders = kt_stage.GetElapsed_ms();
 	// Geometry
 	{
 		IReader* visuals = fs->open_chunk(fsL_VISUALS);
@@ -587,12 +599,14 @@ void CRender::kt_LoadChunk(u32 piece)
 		kt_local_ranges.clear();
 	}
 
+	kt_ms_buffers = kt_stage.GetElapsed_ms();
 	// Visuals
 	{
 		IReader* chunk = fs->open_chunk(fsL_VISUALS);
 		LoadVisuals(chunk);
 		chunk->close();
 	}
+	kt_ms_visuals = kt_stage.GetElapsed_ms();
 
 	// Sectors: only their root visuals. The chunk's portals are not read: its sectors are drawn
 	// whenever the view sees them (CDSGraphManager::traverse).
@@ -639,6 +653,8 @@ void CRender::kt_LoadChunk(u32 piece)
 	L.sector0 = sector_base; L.sector1 = u32(Sectors.size());
 	L.swis = kt_SWIs.back();
 
+	Msg("* [kt time] render of %s by stages: shaders %u, buffers %u, visuals %u, the rest %u ms", P.name, kt_ms_shaders,
+	    kt_ms_buffers - kt_ms_shaders, kt_ms_visuals - kt_ms_buffers, kt_stage.GetElapsed_ms() - kt_ms_visuals);
 	Msg("* [kt chunk] render of %s: %u shaders, %u visuals, %u sectors, VB %u, IB %u", P.name, u32(Shaders.size()) - kt_base_shader,
 	    u32(Visuals.size()) - kt_base_visual, u32(Sectors.size()) - sector_base, u32(nVB.size()) - kt_base_vb, u32(nIB.size()) - kt_base_ib);
 }
@@ -714,6 +730,93 @@ void CRender::kt_UnloadChunk(u32 piece)
 	Msg("* [kt chunk] render of %s is let go: %u visuals, %u sectors", g_kt_chunk.pieces[piece].name, L.visual1 - L.visual0, L.sector1 - L.sector0);
 }
 
+// Seamless world experiment (kt): the level itself let go while the player is deep in a neighbour,
+// and read again. Its sectors and portals stay (everything is built on them); the visuals, the
+// buffers, the shaders with their lightmaps and the occluders go.
+void CRender::kt_base_render(bool on)
+{
+	u32 I;
+	if (!on)
+	{
+		if (!kt_base_on) return;
+		HOM.Unload();
+		for (I = 0; I < kt_base.sectors; I++) ((CSector*)Sectors[I])->kt_root(nullptr);
+		for (I = 0; I < kt_base.visuals; I++)
+		{
+			if (!Visuals[I]) continue;
+			Visuals[I]->Release();
+			xr_delete(Visuals[I]);
+		}
+		for (I = 0; I < kt_base.vb; I++) _RELEASE(nVB[I]);
+		for (I = 0; I < kt_base.xvb; I++) _RELEASE(xVB[I]);
+		for (I = 0; I < kt_base.ib; I++) _RELEASE(nIB[I]);
+		for (I = 0; I < kt_base.xib; I++) _RELEASE(xIB[I]);
+		for (I = 0; I < kt_base.shaders; I++) Shaders[I] = ref_shader();
+		kt_base_on = false;
+		Msg("* [kt chunk] render of the level itself is let go: %u visuals", kt_base.visuals);
+		return;
+	}
+	if (kt_base_on) return;
+	IReader* fs = FS.r_open("$level$", "level");
+	R_ASSERT2(fs, "kt: the level file");
+	IReader* chunk;
+	{
+		chunk = fs->open_chunk(fsL_SHADERS);
+		u32 count = chunk->r_u32();
+		for (u32 i = 0; i < count && i < kt_base.shaders; i++)
+		{
+			string512 n_sh, n_tlist;
+			LPCSTR n = LPCSTR(chunk->pointer());
+			chunk->skip_stringZ();
+			if (0 == n[0]) continue;
+			xr_strcpy(n_sh, n);
+			LPSTR delim = strchr(n_sh, '/');
+			*delim = 0;
+			xr_strcpy(n_tlist, delim + 1);
+			Shaders[i] = dxRenderDeviceRender::Instance().Resources->Create(n_sh, n_tlist);
+		}
+		chunk->close();
+	}
+	kt_base_reading = true;
+	chunk = fs->open_chunk(fsL_VISUALS);
+	kt_CutScan(chunk);
+	chunk->close();
+	{
+		CStreamReader* geom = FS.rs_open("$level$", "level.geom");
+		R_ASSERT2(geom, "level.geom");
+		LoadBuffers(geom, FALSE);
+		LoadSWIs(geom);
+		FS.r_close(geom);
+	}
+	{
+		CStreamReader* geom = FS.rs_open("$level$", "level.geomx");
+		R_ASSERT2(geom, "level.geomX");
+		LoadBuffers(geom, TRUE);
+		FS.r_close(geom);
+	}
+	kt_cut_ranges.clear();
+	chunk = fs->open_chunk(fsL_VISUALS);
+	LoadVisuals(chunk);
+	chunk->close();
+	kt_base_reading = false;
+	{
+		IReader* S = fs->open_chunk(fsL_SECTORS);
+		for (I = 0; I < kt_base.sectors; I++)
+		{
+			IReader* P = S->open_chunk(I);
+			if (0 == P) break;
+			if (4 == P->find_chunk(fsP_Root))
+				((CSector*)Sectors[I])->kt_root((dxRender_Visual*)getVisual(P->r_u32()));
+			P->close();
+		}
+		S->close();
+	}
+	FS.r_close(fs);
+	HOM.Load();
+	kt_base_on = true;
+	Msg("* [kt chunk] render of the level itself is read again: %u visuals", kt_base.visuals);
+}
+
 void CRender::kt_piece_render(u32 piece, bool on)
 {
 	if (on) kt_LoadChunk(piece);
@@ -743,7 +846,8 @@ void CRender::LoadVisuals(IReader* fs)
 		chunk->r_chunk_safe(OGF_HEADER, &H, sizeof(H));
 		V = Models->Instance_Create(H.type);
 		V->Load(0, chunk, 0);
-		Visuals.push_back(V);
+		if (kt_base_reading) Visuals[index] = V; // the level's own visuals back at their numbers
+		else Visuals.push_back(V);
 
 		chunk->close();
 		index++;

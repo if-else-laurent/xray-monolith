@@ -182,6 +182,10 @@ public:
 	void kt_UnloadChunk(u32 piece);
 	virtual void kt_piece_render(u32 piece, bool on);
 	virtual void kt_piece_sectors(u32 piece);
+	// the level's own geometry let go and read again; what it holds in the containers is at their starts
+	struct { u32 shaders, visuals, vb, ib, xvb, xib, sectors; } kt_base;
+	bool kt_base_on, kt_base_reading;
+	virtual void kt_base_render(bool on);
 	// kt: where the geometry of the visuals that touch a cut box lies in the buffers of the file being read
 	struct kt_cut_range
 	{

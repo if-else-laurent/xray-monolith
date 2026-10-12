@@ -131,7 +131,7 @@ void CObjectSpace::Load(IReader* F, CDB::build_callback build_callback)
 typedef bool (*kt_cut_function)(u32 piece, u32 material, const Fvector& a, const Fvector& b, const Fvector& c);
 
 // One set of arrays out of the level's collision file and the pieces': see LoadWithChunks.
-static void kt_gather(xr_vector<KtCform>& chunks, kt_cut_function cut, Fvector*& all_verts, u32& vert_count, CDB::TRI*& all_tris, u32& tri_count, Fbox& volume)
+static void kt_gather(bool base, xr_vector<KtCform>& chunks, kt_cut_function cut, Fvector*& all_verts, u32& vert_count, CDB::TRI*& all_tris, u32& tri_count, Fbox& volume)
 {
 	IReader* F = FS.r_open("$level$", "level.cform");
 	R_ASSERT(F);
@@ -143,6 +143,8 @@ static void kt_gather(xr_vector<KtCform>& chunks, kt_cut_function cut, Fvector*&
 
 	xr_vector<IReader*> readers(chunks.size());
 	xr_vector<hdrCFORM> headers(chunks.size());
+	// `base` off: the level's own triangles are left out (it is let go on the move, the pieces stay)
+	if (!base) H.vertcount = H.facecount = 0;
 	vert_count = H.vertcount;
 	tri_count = H.facecount;
 	volume.set(H.aabb);
@@ -201,7 +203,7 @@ void CObjectSpace::LoadWithChunks(CDB::build_callback build_callback, xr_vector<
 	Fvector* all_verts;
 	CDB::TRI* all_tris;
 	u32 vert_count, tri_count;
-	kt_gather(chunks, cut, all_verts, vert_count, all_tris, tri_count, m_BoundingVolume);
+	kt_gather(true, chunks, cut, all_verts, vert_count, all_tris, tri_count, m_BoundingVolume);
 
 	g_SpatialSpace->initialize(m_BoundingVolume);
 	g_SpatialSpacePhysic->initialize(m_BoundingVolume);
@@ -222,13 +224,13 @@ void CObjectSpace::LoadWithChunks(CDB::build_callback build_callback, xr_vector<
 
 // Seamless world experiment (kt): the same model for another set of pieces, built whole into
 // `target` (any thread); the level's own model is not touched until kt_SwapStatic.
-void CObjectSpace::kt_BuildModel(CDB::MODEL& target, CDB::build_callback build_callback, xr_vector<KtCform>& chunks, bool (*cut)(u32 piece, u32 material, const Fvector& a, const Fvector& b, const Fvector& c))
+void CObjectSpace::kt_BuildModel(CDB::MODEL& target, bool base, CDB::build_callback build_callback, xr_vector<KtCform>& chunks, bool (*cut)(u32 piece, u32 material, const Fvector& a, const Fvector& b, const Fvector& c))
 {
 	Fvector* all_verts;
 	CDB::TRI* all_tris;
 	u32 vert_count, tri_count;
 	Fbox volume;
-	kt_gather(chunks, cut, all_verts, vert_count, all_tris, tri_count, volume);
+	kt_gather(base, chunks, cut, all_verts, vert_count, all_tris, tri_count, volume);
 	target.build_arrays(all_verts, vert_count, all_tris, tri_count, build_callback);
 	xr_free(all_verts);
 	xr_free(all_tris);
