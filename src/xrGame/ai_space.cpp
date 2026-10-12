@@ -226,8 +226,38 @@ void CGameGraph::kt_place(const CLevelGraph& level_graph)
 		m_nodes[i].tNodeID = node;
 		moved++;
 	}
+	// The points of the vertices where those who die offline are put (death points): each has a
+	// place and a node in its level's own numbers too. They lie after the edges, in our copy.
+	u32 points = 0, points_lost = 0;
+	xr_set<const CLevelPoint*> seen;
+	R_ASSERT(sizeof(CLevelPoint) == sizeof(Fvector) + sizeof(u32) + sizeof(float));
+	for (u32 i = 0, count = header().vertex_count(); i < count; i++)
+	{
+		const int chunk = m_kt_chunk[i];
+		if (chunk < 0) continue;
+		const_spawn_iterator I, E;
+		begin_spawn(i, I, E);
+		for (; I != E; ++I)
+		{
+			if (!seen.insert(I).second) continue;
+			Fvector* place = (Fvector*)(void*)I;
+			u32* node = (u32*)((u8*)(void*)I + sizeof(Fvector));
+			place->add(g_kt_chunk.pieces[chunk].offset);
+			u32 merged = level_graph.kt_node(u32(chunk), *node);
+			if (!level_graph.valid_vertex_id(merged) && level_graph.valid_vertex_position(*place))
+				merged = level_graph.vertex_id(*place);
+			if (!level_graph.valid_vertex_id(merged))
+			{
+				points_lost++;
+				merged = m_nodes[i].tNodeID;
+			}
+			*node = merged;
+			points++;
+		}
+	}
 	m_kt_placed = true;
-	Msg("* [kt world] %u vertices of the world graph moved into the world, %u without a node", moved, lost);
+	Msg("* [kt world] %u vertices of the world graph moved into the world, %u without a node; %u death points, %u without a node",
+	    moved, lost, points, points_lost);
 }
 
 void CGameGraph::kt_cross_cells(const CLevelGraph& level_graph, xr_vector<CGameLevelCrossTable::CCell>& cells) const

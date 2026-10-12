@@ -19,6 +19,8 @@
 #include "alife_registry_container.h"
 #include "xrServer.h"
 #include "level.h"
+#include "level_graph.h"
+#include "game_graph.h"
 
 #include <luabind/iterator_policy.hpp>
 #include <luabind/iterator_pair_policy.hpp>
@@ -174,16 +176,64 @@ CSE_ALifeDynamicObject* CALifeSimulator__create(CALifeSimulator* self, ALife::_S
 	return (object);
 }
 
-CSE_Abstract* CALifeSimulator__spawn_item(CALifeSimulator* self, LPCSTR section, const Fvector& position, u32 level_vertex_id, GameGraph::_GRAPH_ID game_vertex_id)
+// Seamless world experiment (kt). Scripts make things at a place, a node and a vertex of the world
+// graph. In the world the place and the node are the world's; but configs written for one level
+// (dynamic anomalies, squads' spawn points) give them in that level's own coordinates and node
+// numbers, and for a level standing next to the base one those are other numbers. Which frame a
+// triple is in can be told: a node of the vertex's own level, by the world's numbering, means the
+// world's frame. Otherwise the node is taken for the level's own and moved, with the place.
+static void kt_to_world(LPCSTR what, Fvector& position, u32& level_vertex_id, GameGraph::_GRAPH_ID game_vertex_id)
+{
+	if (!ai().get_game_graph() || !ai().get_level_graph()) return;
+	const CGameGraph& graph = ai().game_graph();
+	if (!graph.kt_placed() || !graph.valid_vertex_id(game_vertex_id)) return;
+	const int chunk = graph.kt_chunk(game_vertex_id);
+	if (chunk < 0 || u32(chunk) >= g_kt_chunk.pieces.size()) return; // the base level's frame is the world's
+	const CLevelGraph& nodes = ai().level_graph();
+	const bool valid = nodes.valid_vertex_id(level_vertex_id);
+	if (valid && nodes.kt_piece_of(level_vertex_id) == u8(chunk + 1)) return;
+	const u32 node = nodes.kt_node(u32(chunk), level_vertex_id);
+	if (node == u32(-1) || !nodes.valid_vertex_id(node))
+	{
+		Msg("! [kt world] %s at (%.1f %.1f %.1f): node %u is of no use on %s, left as given", what, VPUSH(position), level_vertex_id, g_kt_chunk.pieces[chunk].name);
+		return;
+	}
+	const Fvector there = nodes.vertex_position(node);
+	Fvector moved;
+	moved.add(position, g_kt_chunk.pieces[chunk].offset);
+	Fvector placed;
+	if (valid && position.distance_to_xz(nodes.vertex_position(level_vertex_id)) < 1.5f)
+		placed = there; // the place was read from the node, taken for the world's
+	else if (moved.distance_to_xz(there) < 50.f)
+		placed = moved;
+	else
+	{
+		Msg("! [kt world] %s at (%.1f %.1f %.1f) node %u for a vertex of %s: neither the world's frame nor that level's, left as given",
+		    what, VPUSH(position), level_vertex_id, g_kt_chunk.pieces[chunk].name);
+		return;
+	}
+	Msg("* [kt world] %s given in the own coordinates of %s: (%.1f %.1f %.1f) node %u -> (%.1f %.1f %.1f) node %u",
+	    what, g_kt_chunk.pieces[chunk].name, VPUSH(position), level_vertex_id, VPUSH(placed), node);
+	position = placed;
+	level_vertex_id = node;
+}
+
+CSE_Abstract* CALifeSimulator__spawn_item(CALifeSimulator* self, LPCSTR section, const Fvector& given_position, u32 level_vertex_id, GameGraph::_GRAPH_ID game_vertex_id)
 {
 	THROW(self);
+	Fvector position = given_position;
+	kt_to_world(section, position, level_vertex_id, game_vertex_id);
 	return (self->spawn_item(section, position, level_vertex_id, game_vertex_id, ALife::_OBJECT_ID(-1)));
 }
 
-CSE_Abstract* CALifeSimulator__spawn_item2(CALifeSimulator* self, LPCSTR section, const Fvector& position, u32 level_vertex_id, GameGraph::_GRAPH_ID game_vertex_id, ALife::_OBJECT_ID id_parent)
+CSE_Abstract* CALifeSimulator__spawn_item2(CALifeSimulator* self, LPCSTR section, const Fvector& given_position, u32 level_vertex_id, GameGraph::_GRAPH_ID game_vertex_id, ALife::_OBJECT_ID id_parent)
 {
+	Fvector position = given_position;
 	if (id_parent == ALife::_OBJECT_ID(-1))
+	{
+		kt_to_world(section, position, level_vertex_id, game_vertex_id); // seamless world experiment (kt)
 		return (self->spawn_item(section, position, level_vertex_id, game_vertex_id, id_parent));
+	}
 
 	CSE_ALifeDynamicObject* object = ai().alife().objects().object(id_parent, true);
 	if (!object)
@@ -220,7 +270,11 @@ CSE_Abstract* CALifeSimulator__spawn_item3(CALifeSimulator* self, LPCSTR section
 		return CALifeSimulator__spawn_item2(self, section, position, level_vertex_id, game_vertex_id, id_parent);
 
 	if (id_parent == ALife::_OBJECT_ID(-1))
-		return (self->spawn_item(section, position, level_vertex_id, game_vertex_id, id_parent));
+	{
+		Fvector moved_position = position;
+		kt_to_world(section, moved_position, level_vertex_id, game_vertex_id); // seamless world experiment (kt)
+		return (self->spawn_item(section, moved_position, level_vertex_id, game_vertex_id, id_parent));
+	}
 
 	CSE_ALifeDynamicObject* object = ai().alife().objects().object(id_parent, true);
 	if (!object)
@@ -395,8 +449,10 @@ void AlifeRemoveInfo(const CALifeSimulator *alife, const ALife::_OBJECT_ID &id, 
 
 //Alundaio: teleport object
 void teleport_object(CALifeSimulator* alife, ALife::_OBJECT_ID id, GameGraph::_GRAPH_ID game_vertex_id,
-                     u32 level_vertex_id, const Fvector& position)
+                     u32 level_vertex_id, const Fvector& given_position)
 {
+	Fvector position = given_position;
+	kt_to_world("a teleported object", position, level_vertex_id, game_vertex_id); // seamless world experiment (kt)
 	alife->teleport_object(id, game_vertex_id, level_vertex_id, position);
 }
 
