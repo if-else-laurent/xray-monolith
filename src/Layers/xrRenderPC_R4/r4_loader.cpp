@@ -908,6 +908,14 @@ void CRender::kt_forget_statics()
 			count++;
 		}
 	}
+	// A light that is switched off is in no spatial base and was missed by the look above; switched
+	// on later it drew its shadow by the list it had kept, of geometry that was gone by then (the
+	// crash in render_lights after a fast travel, 2026-10-13). Every light there is, then.
+	for (light* L : v_all_lights)
+	{
+		L->GMLight.RGraph.clear_static<false>();
+		L->m_moving_frames = 0;
+	}
 	GMRainWet.RGraph.clear_static<false>();
 	for (sun::cascade& cascade : m_sun_cascades)
 		cascade.GMCascade.RGraph.clear_static<false>();
