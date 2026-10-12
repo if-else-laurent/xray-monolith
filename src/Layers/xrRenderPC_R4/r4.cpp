@@ -444,6 +444,20 @@ void CRender::create()
 	o.dx11_enable_tessellation = HW.FeatureLevel >= D3D_FEATURE_LEVEL_11_0 && ps_r2_ls_flags_ext.test(
 		R2FLAGEXT_ENABLE_TESSELLATION);
 
+	// Under Wine with DXMT a tessellated model (material models\model_pn: most mutants, parts of
+	// stalkers) leaves no colour but fills the depth buffer in front of the camera, and whatever
+	// the frame draws after it is gone: the rest of the living, the hands, the grass. The setting
+	// is on by default, so it is not trusted there.
+	if (o.dx11_enable_tessellation)
+	{
+		HMODULE const ntdll = GetModuleHandleA("ntdll.dll");
+		if (ntdll && GetProcAddress(ntdll, "wine_get_version"))
+		{
+			o.dx11_enable_tessellation = FALSE;
+			Msg("* [render] tessellation is switched off under Wine: its draws hide the rest of the frame there");
+		}
+	}
+
 	if (o.dx10_minmax_sm == MMSM_AUTODETECT)
 	{
 		o.dx10_minmax_sm = MMSM_OFF;
