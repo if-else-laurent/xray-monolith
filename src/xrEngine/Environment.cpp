@@ -52,6 +52,7 @@ CEnvironment::CEnvironment() :
 	m_ambients_config(0)
 {
 	bNeed_re_create_env = FALSE;
+	m_kt_ambients_asked = 0;
 	bWFX = false;
 	Current[0] = 0;
 	Current[1] = 0;
@@ -576,6 +577,12 @@ void CEnvironment::set_lerp(float current_weight)
 void CEnvironment::OnFrame()
 {
 	PROF_EVENT("CEnvironment::OnFrame");
+	// seamless world (kt): the actor walked onto another level of the world - its own ambients
+	if (g_pGameLevel && g_pGameLevel->bReady && m_kt_ambients_level.size() && Device.dwTimeGlobal > m_kt_ambients_asked)
+	{
+		m_kt_ambients_asked = Device.dwTimeGlobal + 1000;
+		if (!(g_pGameLevel->kt_location_name() == m_kt_ambients_level)) load_level_specific_ambients();
+	}
 #ifdef _EDITOR
     SetGameTime(fGameTime + Device.fTimeDelta*fTimeFactor, fTimeFactor);
     if (fsimilar(ed_to_time, DAY_LENGTH) && fsimilar(ed_from_time, 0.f))

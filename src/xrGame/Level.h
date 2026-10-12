@@ -232,7 +232,7 @@ public:
 	u32 kt_location_id() const;
 	// kt, for maps: that level's name; where a level of the world stands in it (zero for the base
 	// level and for levels that are not of the world); is the level a part of the world
-	shared_str kt_location_name() const;
+	virtual shared_str kt_location_name() const;
 	Fvector kt_level_offset(LPCSTR level_name) const;
 	bool kt_level_in_world(LPCSTR level_name) const;
 	virtual void OnRender();

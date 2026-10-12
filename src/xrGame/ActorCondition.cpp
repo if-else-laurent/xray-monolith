@@ -270,7 +270,7 @@ void CActorCondition::UpdateCondition()
 
 
 		string512 pp_sect_name;
-		shared_str ln = Level().name();
+		shared_str ln = Level().kt_location_name(); // seamless world (kt): the level the actor is really on
 		if (ln.size())
 		{
 			CEffectorPP* ppe = object().Cameras().GetPPEffector((EEffectorPPType)effPsyHealth);

@@ -647,7 +647,9 @@ void CEnvironment::load_level_specific_ambients()
 {
 	//SECUROM_MARKER_PERFORMANCE_ON(13)
 
-	const shared_str level_name = g_pGameLevel->name();
+	// seamless world (kt): of the level of the world the actor stands on; asked again in OnFrame
+	const shared_str level_name = g_pGameLevel->kt_location_name();
+	m_kt_ambients_level = level_name;
 
 	string_path path;
 	strconcat(sizeof(path), path, "environment\\ambients\\", level_name.c_str(), ".ltx");

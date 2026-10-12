@@ -183,6 +183,14 @@ bool CSE_ALifeOnlineOfflineGroup::synchronize_location()
 {
 	if (m_bOnline && !m_members.empty())
 	{
+		// Seamless world experiment (kt): the members of a squad are not looked at by the switch on
+		// their own, so online they kept the node and the vertex of the world graph they came online
+		// with, and the squad copied them. On one level nobody noticed; in the world a squad that
+		// walked over a seam stayed "on the level it came from" for scripts and for the map.
+		for (MEMBERS::iterator I = m_members.begin(); I != m_members.end(); ++I)
+			if (ai().level_graph().valid_vertex_id((*I).second->m_tNodeID))
+				(*I).second->CSE_ALifeDynamicObject::synchronize_location();
+
 		MEMBER* member = (*m_members.begin()).second;
 		o_Position = member->o_Position;
 		m_tNodeID = member->m_tNodeID;

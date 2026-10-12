@@ -308,6 +308,9 @@ public:
 	// kt: metres of walking from the player to the level (0) and to every attached piece (1..);
 	// flt_max - further than -kt_reach looks. False: not known now, the distance alone decides.
 	virtual bool kt_reach(xr_vector<float>& metres) { return false; }
+	// kt: the name of the level, of those put together, the actor stands on; the played level's
+	// name when there is no world
+	virtual shared_str kt_location_name() const { return name(); }
 	virtual void OnRender(void);
 
 	virtual shared_str OpenDemoFile(const char* demo_file_name) = 0;

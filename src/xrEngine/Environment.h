@@ -425,6 +425,9 @@ protected:
 	void destroy_mixer();
 
 	void load_level_specific_ambients();
+	// seamless world (kt): the level whose own ambients are loaded now, and when it was last asked
+	shared_str m_kt_ambients_level;
+	u32 m_kt_ambients_asked;
 
 public:
 	INGAME_EDITOR_VIRTUAL SThunderboltDesc* thunderbolt_description(CInifile& config, shared_str const& section);
