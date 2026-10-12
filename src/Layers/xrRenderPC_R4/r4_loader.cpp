@@ -1125,3 +1125,63 @@ void CRender::Load3DFluid()
 		FS.r_close(F);
 	}
 }
+
+// Seamless world experiment (kt): what the renderer thinks of sectors where the camera is. Grass,
+// the living and the hands are drawn only when the right sectors count as seen, so when they
+// vanish this tells which link of the chain is off.
+void CRender::kt_report()
+{
+	auto number = [&](void* sector) -> int
+	{
+		if (!sector) return -1;
+		for (u32 i = 0; i < Sectors.size(); i++)
+			if ((void*)Sectors[i] == sector) return int(i);
+		return -2; // not in the list: a pointer to a sector that is no more
+	};
+	string1024 line = "";
+	string64 one;
+	for (u32 i = 0; i < Sectors.size(); i++)
+	{
+		bool extra = false;
+		for (void* sector : g_kt_chunk.sectors)
+			if (sector == (void*)Sectors[i]) extra = true;
+		xr_sprintf(one, " %u%s", i, !Sectors[i] ? ":gone" : extra ? ":piece" : "");
+		if (xr_strlen(line) + xr_strlen(one) + 1 < sizeof(line)) xr_strcat(line, one);
+	}
+	Msg("* [kt sectors]%s", line);
+	Msg("* [kt sectors] open-air %d, the camera's (last) %d, the view started in %d, open-air seen %s, pieces' sectors listed %u",
+	    number(pOutdoorSector), number(pLastSector), number(GMBase.i_start),
+	    pOutdoorSector && GMBase.is_sector_visible(pOutdoorSector) ? "yes" : "NO", u32(g_kt_chunk.sectors.size()));
+
+	const Fvector P = Device.vCameraPosition;
+	Fvector dir;
+	dir.set(0, -1, 0);
+	xrXRC xrc;
+	xrc.ray_options(CDB::OPT_ONLYNEAREST);
+	if (rmPortals)
+	{
+		xrc.ray_query(rmPortals, P, dir, 1000.f);
+		if (xrc.r_count())
+		{
+			CDB::TRI* tri = rmPortals->get_tris() + xrc.r_begin()->id;
+			CPortal* portal = (CPortal*)Portals[tri->dummy];
+			CSector* facing = portal->getSectorFacing(P);
+			FHierrarhyVisual* root = facing ? (FHierrarhyVisual*)facing->root() : 0;
+			Msg("* [kt sectors] a portal %.1f m below: it faces sector %d, whose box %s the camera", xrc.r_begin()->range, number(facing),
+			    root ? (root->vis.box.contains(P) ? "HOLDS" : "does not hold") : "is not there for");
+		}
+		else Msg("* [kt sectors] no portal below");
+	}
+	xrc.ray_query(g_pGameLevel->ObjectSpace.GetStaticModel(), P, dir, 1000.f);
+	if (xrc.r_count())
+	{
+		const CDB::RESULT* R = xrc.r_begin();
+		int piece = -1;
+		for (u32 i = 0; i < g_kt_chunk.pieces.size(); i++)
+			if (u32(R->id) >= g_kt_chunk.pieces[i].tri_base && u32(R->id) < g_kt_chunk.pieces[i].tri_base + g_kt_chunk.pieces[i].tri_count) piece = int(i);
+		Msg("* [kt sectors] the ground %.1f m below: triangle %d of %s, its sector %d, which is %s", R->range, R->id,
+		    piece < 0 ? "the level itself" : g_kt_chunk.pieces[piece].name, int(R->sector),
+		    getSector(R->sector) ? "there" : "NOT THERE");
+	}
+	else Msg("* [kt sectors] no ground below the camera at (%.1f %.1f %.1f)", P.x, P.y, P.z);
+}

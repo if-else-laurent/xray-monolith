@@ -327,6 +327,8 @@ public:
 	// a piece's materials with their lightmaps made ahead, a few per frame; true when all are there
 	virtual bool kt_piece_prepare(u32 piece) { return true; }
 	virtual void kt_prepare_reset() {}
+	// what the renderer thinks of sectors where the camera is, into the log (console kt_piece)
+	virtual void kt_report() {}
 
 	virtual size_t SectorsCount() { return size_t(0); }
 

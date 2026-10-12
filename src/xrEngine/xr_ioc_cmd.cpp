@@ -453,6 +453,7 @@ public:
 		for (u32 i = 0; i < g_kt_chunk.pieces.size(); i++)
 			Msg("* [kt stream] piece %u %s: %s%s", i, g_kt_chunk.pieces[i].name, g_kt_chunk.pieces[i].loaded ? "loaded" : "let go",
 			    g_kt_chunk.pieces[i].manual ? ", by hand" : "");
+		if (Render) Render->kt_report();
 	}
 };
 
