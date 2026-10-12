@@ -57,6 +57,7 @@ protected:
 		Fvector2 m_Position;
 		Fvector2 m_Direction;
 		shared_str m_LevelName;
+		Fvector m_kt_offset; // seamless world (kt): where that level stands in the world
 		bool m_Actuality;
 	};
 

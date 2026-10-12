@@ -40,6 +40,7 @@ public:
 	CUIStatic& Background() { return m_background; };
 	CUIWindow& MapFrame() { return m_clipFrame; };
 	void SetupCurrentMap();
+	shared_str m_kt_location; // seamless world (kt): the level whose map is shown
 	void OnSectorChanged(int sector);
 	void Counter_ResetClrAnimation();
 

@@ -1840,6 +1840,7 @@ bool CLevel::kt_reach(xr_vector<float>& metres)
 // level for the engine; this is the one of them the actor's vertex of the world graph came from.
 u32 CLevel::kt_location_id() const
 {
+	if (!ai().get_game_graph()) return u32(-1);
 	const CGameGraph& graph = ai().game_graph();
 	const u32 played = ai().get_level_graph() ? u32(ai().level_graph().level_id()) : u32(-1);
 	CActor* actor = Actor();
@@ -1848,4 +1849,36 @@ u32 CLevel::kt_location_id() const
 	if (!graph.valid_vertex_id(vertex)) return played;
 	const u32 level = graph.kt_level(vertex);
 	return graph.kt_in_world(level) ? level : played;
+}
+
+shared_str CLevel::kt_location_name() const
+{
+	const u32 location = kt_location_id();
+	if (location != u32(-1))
+	{
+		const GameGraph::LEVEL_MAP& levels = ai().game_graph().header().levels();
+		GameGraph::LEVEL_MAP::const_iterator I = levels.find(GameGraph::_LEVEL_ID(location));
+		if (I != levels.end()) return (*I).second.name();
+	}
+	return name();
+}
+
+// Maps are drawn in a level's own coordinates, the world lives in the base level's.
+Fvector CLevel::kt_level_offset(LPCSTR level_name) const
+{
+	Fvector offset;
+	offset.set(0, 0, 0);
+	if (!g_kt_chunk.active || !level_name) return offset;
+	for (u32 i = 0; i < g_kt_chunk.pieces.size(); i++)
+		if (0 == stricmp(g_kt_chunk.pieces[i].name, level_name)) return g_kt_chunk.pieces[i].offset;
+	return offset;
+}
+
+bool CLevel::kt_level_in_world(LPCSTR level_name) const
+{
+	if (!g_kt_chunk.active || !level_name) return false;
+	if (0 == stricmp(*name(), level_name)) return true;
+	for (u32 i = 0; i < g_kt_chunk.pieces.size(); i++)
+		if (0 == stricmp(g_kt_chunk.pieces[i].name, level_name)) return true;
+	return false;
 }

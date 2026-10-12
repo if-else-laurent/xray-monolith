@@ -668,7 +668,13 @@ void CUIMapWnd::ActivatePropertiesBox(CUIWindow* w)
 			// Get accurate lvid as well
 			Fvector lm_real_pos = { lm_real_mouse_pos.x, 0, lm_real_mouse_pos.y };
 			u32 lm_lvid = u32(-1);
-			if (0 == xr_strcmp(g_pGameLevel->name().c_str(), lm_name)) {
+			// seamless world (kt): a map shows its level's own coordinates; the levels of the world
+			// are all loaded, so the click is found on the ground as on the current level
+			const Fvector kt_offset = Level().kt_level_offset(lm_name);
+			lm_real_pos.add(kt_offset);
+			lm_real_mouse_pos.x += kt_offset.x;
+			lm_real_mouse_pos.y += kt_offset.z;
+			if (0 == xr_strcmp(g_pGameLevel->name().c_str(), lm_name) || Level().kt_level_in_world(lm_name)) {
 
 				// perform ray cast to get actual position
 				collide::rq_result R;
@@ -700,7 +706,7 @@ void CUIMapWnd::ActivatePropertiesBox(CUIWindow* w)
 						current_gvid++;
 						continue;
 					}
-					GameGraph::_LEVEL_ID level_id = vertex->level_id();
+					GameGraph::_LEVEL_ID level_id = gg.kt_level(current_gvid);
 					const GameGraph::LEVEL_MAP& levels = ai().game_graph().header().levels();
 					GameGraph::LEVEL_MAP::const_iterator I = levels.find(level_id);
 					if (I == levels.end()) {
@@ -876,8 +882,13 @@ void CUIMapWnd::ViewActor()
 	Fvector v = Level().CurrentEntity()->Position();
 	m_prev_actor_pos.set(v.x, v.z);
 
+	// seamless world (kt): the map of the level the actor is really on, in that level's coordinates
+	const shared_str kt_location = Level().kt_location_name();
+	const Fvector kt_offset = Level().kt_level_offset(*kt_location);
+	Fvector2 kt_actor_on_map;
+	kt_actor_on_map.set(v.x - kt_offset.x, v.z - kt_offset.z);
 	CUICustomMap* lm = NULL;
-	u16 idx = GetIdxByName(Level().name());
+	u16 idx = GetIdxByName(kt_location);
 	if (idx != u16(-1))
 	{
 		lm = GetMapByIdx(idx);
@@ -887,7 +898,7 @@ void CUIMapWnd::ViewActor()
 		lm = GlobalMap();
 	}
 
-	SetTargetMap(lm, m_prev_actor_pos, true);
+	SetTargetMap(lm, kt_actor_on_map, true);
 }
 
 void CUIMapWnd::ShowHintStr(CUIWindow* parent, LPCSTR text) //map name

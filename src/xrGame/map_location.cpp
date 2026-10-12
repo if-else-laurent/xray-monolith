@@ -61,6 +61,7 @@ CMapLocation::CMapLocation(LPCSTR type, u16 object_id)
 
 	EnableSpot();
 	m_cached.m_Position.set(10000, 10000);
+	m_cached.m_kt_offset.set(0, 0, 0);
 	m_cached.m_updatedFrame = u32(-1);
 	m_cached.m_graphID = GameGraph::_GRAPH_ID(-1);
 	if (!IsGameTypeSingle())
@@ -248,7 +249,7 @@ void CMapLocation::CalcPosition()
 	if (m_flags.test(ePosToActor) && Level().CurrentEntity())
 	{
 		m_position_global = Level().CurrentEntity()->Position();
-		m_cached.m_Position.set(m_position_global.x, m_position_global.z);
+		m_cached.m_Position.set(m_position_global.x - m_cached.m_kt_offset.x, m_position_global.z - m_cached.m_kt_offset.z);
 		return;
 	}
 
@@ -258,13 +259,13 @@ void CMapLocation::CalcPosition()
 		if (m_owner_se_object)
 		{
 			m_position_global = m_owner_se_object->draw_level_position();
-			m_cached.m_Position.set(m_position_global.x, m_position_global.z);
+			m_cached.m_Position.set(m_position_global.x - m_cached.m_kt_offset.x, m_position_global.z - m_cached.m_kt_offset.z);
 		}
 	}
 	else
 	{
 		m_position_global = pObject->Position();
-		m_cached.m_Position.set(m_position_global.x, m_position_global.z);
+		m_cached.m_Position.set(m_position_global.x - m_cached.m_kt_offset.x, m_position_global.z - m_cached.m_kt_offset.z);
 	}
 }
 
@@ -301,6 +302,8 @@ const Fvector2& CMapLocation::CalcDirection()
 	return m_cached.m_Direction;
 }
 
+// Seamless world (kt): a spot belongs to the map of the level its object is really on, and is put
+// there in that level's own coordinates: the levels put together are one level only for the engine.
 void CMapLocation::CalcLevelName()
 {
 	if (m_owner_se_object && ai().get_game_graph())
@@ -308,13 +311,15 @@ void CMapLocation::CalcLevelName()
 		if (m_cached.m_graphID != m_owner_se_object->m_tGraphID)
 		{
 			m_cached.m_LevelName = ai().game_graph().header().level(
-				ai().game_graph().vertex(m_owner_se_object->m_tGraphID)->level_id()).name();
+				ai().game_graph().kt_level(m_owner_se_object->m_tGraphID)).name();
 			m_cached.m_graphID = m_owner_se_object->m_tGraphID;
+			m_cached.m_kt_offset = Level().kt_level_offset(*m_cached.m_LevelName);
 		}
 	}
 	else
 	{
-		m_cached.m_LevelName = Level().name();
+		m_cached.m_LevelName = Level().kt_location_name();
+		m_cached.m_kt_offset = Level().kt_level_offset(*m_cached.m_LevelName);
 	}
 }
 
@@ -436,7 +441,7 @@ void CMapLocation::UpdateSpot(CUICustomMap* map, CMapSpot* sp)
 		if (b_pointer)
 			UpdateSpotPointer(map, GetSpotPointer(sp));
 	}
-	else if (Level().name() == map->MapName() && GetSpotPointer(sp))
+	else if (Level().kt_location_name() == map->MapName() && GetSpotPointer(sp))
 	{
         if (!m_owner_se_object)
             return;
@@ -515,8 +520,7 @@ void CMapLocation::UpdateSpot(CUICustomMap* map, CMapSpot* sp)
 				xr_vector<u32>::reverse_iterator it_e = map_point_path.rend();
 				for (; (it != it_e) && (!bDone); ++it)
 				{
-					if (*ai().game_graph().header().level(ai().game_graph().vertex(*it)->level_id()).name() == Level().
-						name())
+					if (ai().game_graph().header().level(ai().game_graph().kt_level(*it)).name() == map->MapName())
 						break;
 				}
 				if (it != it_e)
@@ -524,8 +528,9 @@ void CMapLocation::UpdateSpot(CUICustomMap* map, CMapSpot* sp)
 					Fvector p = ai().game_graph().vertex(*it)->level_point();
 					if (Actor()->Position().distance_to_sqr(p) > 45.0f * 45.0f)
 					{
+						const Fvector kt_offset = Level().kt_level_offset(*map->MapName());
 						Fvector2 position;
-						position.set(p.x, p.z);
+						position.set(p.x - kt_offset.x, p.z - kt_offset.z);
 						m_position_on_map = map->ConvertRealToLocal(position, false);
 						UpdateSpotPointer(map, GetSpotPointer(sp));
 					}

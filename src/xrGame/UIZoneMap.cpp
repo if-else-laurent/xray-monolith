@@ -190,6 +190,9 @@ void CUIZoneMap::UpdateRadar(Fvector pos)
 {
 	m_clipFrame.Update();
 	m_background.Update();
+	// seamless world (kt): the actor walked onto another level of the world - its map, its coordinates
+	if (Level().kt_location_name() != m_kt_location) SetupCurrentMap();
+	pos.sub(Level().kt_level_offset(*m_kt_location));
 	m_activeMap->SetActivePoint(pos);
 }
 
@@ -205,7 +208,9 @@ bool CUIZoneMap::ZoomOut()
 
 void CUIZoneMap::SetupCurrentMap()
 {
-	m_activeMap->Initialize(Level().name(), "hud\\default");
+	// seamless world (kt): the map of the level of the world the actor stands on
+	m_kt_location = Level().kt_location_name();
+	m_activeMap->Initialize(m_kt_location, "hud\\default");
 
 	Frect r;
 	m_clipFrame.GetAbsoluteRect(r);
@@ -214,7 +219,7 @@ void CUIZoneMap::SetupCurrentMap()
 	Fvector2 wnd_size;
 	float zoom_factor = float(m_clipFrame.GetWidth()) / 100.0f;
 
-	LPCSTR ln = Level().name().c_str();
+	LPCSTR ln = m_kt_location.c_str();
 	if (pGameIni->section_exist(ln))
 	{
 		if (pGameIni->line_exist(ln, "minimap_zoom"))
