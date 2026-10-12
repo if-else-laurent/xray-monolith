@@ -357,11 +357,39 @@ void IGame_Level::kt_stream_tick()
 		kt_stream_task.run([this]()
 		{
 			ObjectSpace.kt_BuildModel(*kt_fresh, kt_stream_job_base, kt_cform_built, kt_stream_job, kt_cform_cut);
+			// the files the main thread is about to read for the pieces on their way in: into the system's cache
+			for (u32 n = 0; n < kt_stream_job.size(); n++)
+			{
+				const KtPiece& P = g_kt_chunk.pieces[kt_stream_job[n].piece];
+				if (P.loaded) continue;
+				static const LPCSTR files[3] = {"\\level.geom", "\\level.geomx", "\\level"};
+				for (u32 f = 0; f < 3; f++)
+				{
+					string_path file;
+					FS.update_path(file, "$game_levels$", P.name);
+					xr_strcat(file, files[f]);
+					if (!FS.exist(file)) continue;
+					IReader* R = FS.r_open(file);
+					if (!R) continue;
+					const u8* data = (const u8*)R->pointer();
+					volatile u32 sum = 0;
+					for (int at = 0, size = R->length(); at < size; at += 4096) sum += data[at];
+					FS.r_close(R);
+				}
+			}
 			kt_stream_state = 2;
 		});
 		return;
 	}
-	if (kt_stream_state != 2) return;
+	// the materials of the pieces on their way in are made a few per frame meanwhile
+	bool prepared = true;
+	for (u32 n = 0; n < kt_stream_job.size(); n++)
+		if (!pieces[kt_stream_job[n].piece].loaded && !Render->kt_piece_prepare(kt_stream_job[n].piece))
+		{
+			prepared = false;
+			break;
+		}
+	if (kt_stream_state != 2 || !prepared) return;
 
 	kt_stream_task.wait();
 	Device.secondary_tasks.wait(); // nobody else is to be inside the model or the geometry now
@@ -417,6 +445,7 @@ void IGame_Level::kt_stream_tick()
 		g_kt_chunk.base_loaded = true;
 		xr_strcat(come, " the level itself");
 	}
+	Render->kt_prepare_reset();
 	Sound->set_geometry_occ(ObjectSpace.GetStaticModel());
 	Msg("* [kt stream] let go:%s; taken in:%s. Collisions built aside in %u ms; on the main thread: swap %u, old model freed %u, geometry dropped %u, geometry read %u ms",
 	    gone[0] ? gone : " -", come[0] ? come : " -", built_ms, swap_ms, freed_ms - swap_ms, gone_ms - freed_ms, timer.GetElapsed_ms() - gone_ms);

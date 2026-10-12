@@ -324,6 +324,9 @@ public:
 	virtual void kt_piece_render(u32 piece, bool on) {}
 	virtual void kt_piece_sectors(u32 piece) {}
 	virtual void kt_base_render(bool on) {}
+	// a piece's materials with their lightmaps made ahead, a few per frame; true when all are there
+	virtual bool kt_piece_prepare(u32 piece) { return true; }
+	virtual void kt_prepare_reset() {}
 
 	virtual size_t SectorsCount() { return size_t(0); }
 

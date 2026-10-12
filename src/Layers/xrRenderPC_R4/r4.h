@@ -186,6 +186,14 @@ public:
 	struct { u32 shaders, visuals, vb, ib, xvb, xib, sectors; } kt_base;
 	bool kt_base_on, kt_base_reading;
 	virtual void kt_base_render(bool on);
+	virtual bool kt_piece_prepare(u32 piece);
+	virtual void kt_prepare_reset();
+	void kt_shader_names(u32 piece, xr_vector<std::pair<xr_string, xr_string> >& names);
+	void kt_forget_statics();
+	xr_vector<std::pair<xr_string, xr_string> > kt_prep_names;
+	xr_vector<ref_shader> kt_prep_shaders;
+	xr_vector<u32> kt_prep_done;
+	u32 kt_prep_piece, kt_prep_at;
 	// kt: where the geometry of the visuals that touch a cut box lies in the buffers of the file being read
 	struct kt_cut_range
 	{

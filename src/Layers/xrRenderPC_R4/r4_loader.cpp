@@ -29,6 +29,7 @@ void CRender::level_Load(IReader* fs)
 	pApp->LoadBegin();
 	kt_base_reading = false;
 	kt_base_on = true;
+	kt_prepare_reset();
 	dxRenderDeviceRender::Instance().Resources->DeferredLoad(TRUE);
 	IReader* chunk;
 
@@ -525,43 +526,20 @@ void CRender::kt_LoadChunk(u32 piece)
 	const u32 sector_base = u32(Sectors.size());
 	g_kt_chunk.loading = true;
 
-	// Shaders. Lightmaps and LOD atlases are files of the level with the same names in every
-	// level, so the chunk's ones get a prefix the texture loader understands.
+	// Shaders (see kt_shader_names). Made ahead by kt_piece_prepare, they are only looked up here.
 	{
-		IReader* chunk = fs->open_chunk(fsL_SHADERS);
-		R_ASSERT2(chunk, "kt chunk: no shaders in the level file");
-		u32 count = chunk->r_u32();
+		xr_vector<std::pair<xr_string, xr_string> > names;
+		kt_shader_names(piece, names);
+		const u32 count = u32(names.size());
 		Shaders.resize(kt_base_shader + count);
+		if (kt_screen.size() < kt_base_shader + count) kt_screen.resize(kt_base_shader + count, 0);
 		for (u32 i = 0; i < count; i++)
 		{
-			string512 n_sh, n_tlist;
-			LPCSTR n = LPCSTR(chunk->pointer());
-			chunk->skip_stringZ();
-			if (0 == n[0]) continue;
-			xr_strcpy(n_sh, n);
-			LPSTR delim = strchr(n_sh, '/');
-			*delim = 0;
-			n_tlist[0] = 0;
-			string256 token;
-			int tokens = _GetItemCount(delim + 1);
-			for (int t = 0; t < tokens; t++)
-			{
-				_GetItem(delim + 1, t, token);
-				if (t) xr_strcat(n_tlist, ",");
-				if (0 == strncmp(token, "lmap#", 5) || 0 == strncmp(token, "level_lods", 10))
-				{
-					// "kt~<piece>~": the texture loader finds the piece's folder by the number
-					string32 prefix;
-					xr_sprintf(prefix, "kt~%u~", piece);
-					xr_strcat(n_tlist, prefix);
-				}
-				xr_strcat(n_tlist, token);
-			}
-			Shaders[kt_base_shader + i] = dxRenderDeviceRender::Instance().Resources->Create(n_sh, n_tlist);
-			if (kt_screen.size() <= kt_base_shader + i) kt_screen.resize(kt_base_shader + i + 1, 0);
+			if (names[i].first.empty()) continue;
+			LPCSTR n_tlist = names[i].second.c_str();
+			Shaders[kt_base_shader + i] = dxRenderDeviceRender::Instance().Resources->Create(names[i].first.c_str(), n_tlist);
 			kt_screen[kt_base_shader + i] = (strstr(n_tlist, "prop_fake") || strstr(n_tlist, "fx_lavahell")) ? 1 : (strstr(n_tlist, "terrain\\") == n_tlist ? 2 : 0);
 		}
-		chunk->close();
 	}
 
 	kt_ms_shaders = kt_stage.GetElapsed_ms();
@@ -753,6 +731,7 @@ void CRender::kt_base_render(bool on)
 		for (I = 0; I < kt_base.xib; I++) _RELEASE(xIB[I]);
 		for (I = 0; I < kt_base.shaders; I++) Shaders[I] = ref_shader();
 		kt_base_on = false;
+		kt_forget_statics();
 		Msg("* [kt chunk] render of the level itself is let go: %u visuals", kt_base.visuals);
 		return;
 	}
@@ -814,6 +793,7 @@ void CRender::kt_base_render(bool on)
 	FS.r_close(fs);
 	HOM.Load();
 	kt_base_on = true;
+	kt_forget_statics();
 	Msg("* [kt chunk] render of the level itself is read again: %u visuals", kt_base.visuals);
 }
 
@@ -821,6 +801,116 @@ void CRender::kt_piece_render(u32 piece, bool on)
 {
 	if (on) kt_LoadChunk(piece);
 	else kt_UnloadChunk(piece);
+	kt_forget_statics();
+}
+
+// The materials of a piece as its level file names them. Lightmaps and LOD atlases are files of the
+// level with the same names in every level, so the piece's ones get a prefix the texture loader
+// understands: "kt~<piece>~".
+void CRender::kt_shader_names(u32 piece, xr_vector<std::pair<xr_string, xr_string> >& names)
+{
+	names.clear();
+	string_path file;
+	FS.update_path(file, "$game_levels$", g_kt_chunk.pieces[piece].name);
+	xr_strcat(file, "\\level");
+	IReader* fs = FS.r_open(file);
+	if (!fs) return;
+	IReader* chunk = fs->open_chunk(fsL_SHADERS);
+	R_ASSERT2(chunk, "kt chunk: no shaders in the level file");
+	u32 count = chunk->r_u32();
+	names.resize(count);
+	for (u32 i = 0; i < count; i++)
+	{
+		string512 n_sh, n_tlist;
+		LPCSTR n = LPCSTR(chunk->pointer());
+		chunk->skip_stringZ();
+		if (0 == n[0]) continue;
+		xr_strcpy(n_sh, n);
+		LPSTR delim = strchr(n_sh, '/');
+		*delim = 0;
+		n_tlist[0] = 0;
+		string256 token;
+		int tokens = _GetItemCount(delim + 1);
+		for (int t = 0; t < tokens; t++)
+		{
+			_GetItem(delim + 1, t, token);
+			if (t) xr_strcat(n_tlist, ",");
+			if (0 == strncmp(token, "lmap#", 5) || 0 == strncmp(token, "level_lods", 10))
+			{
+				string32 prefix;
+				xr_sprintf(prefix, "kt~%u~", piece);
+				xr_strcat(n_tlist, prefix);
+			}
+			xr_strcat(n_tlist, token);
+		}
+		names[i].first = n_sh;
+		names[i].second = n_tlist;
+	}
+	chunk->close();
+	FS.r_close(fs);
+}
+
+// Called every frame while a piece is on its way in: a few materials are made each time, so that
+// reading the piece does not have to load all its lightmaps in one frame.
+bool CRender::kt_piece_prepare(u32 piece)
+{
+	for (u32 i = 0; i < kt_prep_done.size(); i++)
+		if (kt_prep_done[i] == piece) return true;
+	if (kt_prep_piece != piece)
+	{
+		kt_prep_piece = piece;
+		kt_prep_at = 0;
+		kt_shader_names(piece, kt_prep_names);
+	}
+	CTimer timer;
+	timer.Start();
+	while (kt_prep_at < kt_prep_names.size() && timer.GetElapsed_ms() < 3)
+	{
+		const std::pair<xr_string, xr_string>& name = kt_prep_names[kt_prep_at++];
+		if (name.first.empty()) continue;
+		kt_prep_shaders.push_back(dxRenderDeviceRender::Instance().Resources->Create(name.first.c_str(), name.second.c_str()));
+	}
+	if (kt_prep_at < kt_prep_names.size()) return false;
+	kt_prep_done.push_back(piece);
+	kt_prep_piece = u32(-1);
+	return true;
+}
+
+void CRender::kt_prepare_reset()
+{
+	kt_prep_shaders.clear();
+	kt_prep_done.clear();
+	kt_prep_names.clear();
+	kt_prep_piece = u32(-1);
+	kt_prep_at = 0;
+}
+
+// Lights keep the list of static geometry they shadow for as long as they stand still. When
+// geometry goes or comes the lists are void: every light is told to gather its own anew.
+void CRender::kt_forget_statics()
+{
+	xr_vector<ISpatialShared> all;
+	Fvector centre = {0.f, 0.f, 0.f};
+	ISpatial_DB* spaces[2] = {g_SpatialSpace, g_SpatialSpaceLights};
+	u32 count = 0;
+	for (u32 s = 0; s < 2; s++)
+	{
+		if (!spaces[s]) continue;
+		all.clear();
+		spaces[s]->q_sphere(all, 0, STYPE_LIGHTSOURCE, centre, 1000000.f);
+		for (ISpatialShared spatial : all)
+		{
+			if (!spatial) continue;
+			light* L = (light*)spatial->dcast_Light();
+			if (!L) continue;
+			L->GMLight.RGraph.clear_static<false>();
+			L->m_moving_frames = 0;
+			count++;
+		}
+	}
+	GMRainWet.RGraph.clear_static<false>();
+	for (sun::cascade& cascade : m_sun_cascades)
+		cascade.GMCascade.RGraph.clear_static<false>();
 }
 
 // After the static collision model was rebuilt its triangles name the piece's sectors by the
