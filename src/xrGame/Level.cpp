@@ -1843,7 +1843,7 @@ u32 CLevel::kt_location_id() const
 	if (!ai().get_game_graph()) return u32(-1);
 	const CGameGraph& graph = ai().game_graph();
 	const u32 played = ai().get_level_graph() ? u32(ai().level_graph().level_id()) : u32(-1);
-	CActor* actor = Actor();
+	CActor* actor = g_actor; // not Actor(): this is asked while the level is still being loaded, before the game is there
 	if (!actor || !graph.kt_placed()) return played;
 	const u32 vertex = actor->ai_location().game_vertex_id();
 	if (!graph.valid_vertex_id(vertex)) return played;
