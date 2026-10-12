@@ -227,6 +227,9 @@ public:
 	virtual void OnEvent(EVENT E, u64 P1, u64 P2);
 	virtual void _BCL OnFrame(void);
 	virtual bool kt_reach(xr_vector<float>& metres); // seamless world experiment (kt)
+	// kt: the level, of those put together, the actor stands on; the played level's id when there
+	// is no world or no actor yet
+	u32 kt_location_id() const;
 	virtual void OnRender();
 
 	enum DBG_RENDER_FLAGS

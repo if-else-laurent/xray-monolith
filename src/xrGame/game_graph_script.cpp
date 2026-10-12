@@ -50,6 +50,14 @@ GameGraph::LEVEL_MAP const& get_levels(CGameGraph const* graph)
 	return graph->header().levels();
 }
 
+// Seamless world experiment (kt): scripts are told the level the vertex is on by the file. For the
+// simulation the levels put together are one level, but scripts ask this mostly for a name.
+u32 CVertex__level_id(const CGameGraph::CVertex* vertex)
+{
+	const CGameGraph& graph = ai().game_graph();
+	return (graph.kt_level(u32(vertex - graph.vertex(0))));
+}
+
 #pragma optimize("s",on)
 void CGameGraph::script_register(lua_State* L)
 {
@@ -72,7 +80,7 @@ void CGameGraph::script_register(lua_State* L)
 		class_<CVertex>("GameGraph__CVertex")
 		.def("level_point", &CVertex__level_point)
 		.def("game_point", &CVertex__game_point)
-		.def("level_id", &CVertex::level_id)
+		.def("level_id", &CVertex__level_id)
 		.def("level_vertex_id", &CVertex::level_vertex_id)
 	];
 }

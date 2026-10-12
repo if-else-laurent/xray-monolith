@@ -20,6 +20,7 @@
 #include "date_time.h"
 #include "ai_space.h"
 #include "level_graph.h"
+#include "game_graph.h"
 #include "PHCommander.h"
 #include "PHScriptCall.h"
 #include "script_engine.h"
@@ -514,9 +515,21 @@ bool patrol_path_exists(LPCSTR patrol_path)
 	return (!!ai().patrol_paths().path(patrol_path, true));
 }
 
+// Seamless world experiment (kt): scripts get the name of the level the actor stands on; the engine
+// itself goes on with the one name of the level that was loaded.
 LPCSTR get_name()
 {
+	const u32 location = Level().kt_location_id();
+	const GameGraph::LEVEL_MAP& levels = ai().game_graph().header().levels();
+	GameGraph::LEVEL_MAP::const_iterator I = levels.find(GameGraph::_LEVEL_ID(location));
+	if (location != u32(-1) && I != levels.end()) return (*(*I).second.name());
 	return (*Level().name());
+}
+
+// is the level (by its id in the world graph) a part of the world put together
+bool kt_in_world(u32 level_id)
+{
+	return (ai().game_graph().kt_in_world(level_id));
 }
 
 void prefetch_sound(LPCSTR name)
@@ -2520,6 +2533,7 @@ void CLevel::script_register(lua_State* L)
 			def("patrol_path_exists", patrol_path_exists),
 			def("vertex_position", vertex_position),
 			def("name", get_name),
+			def("kt_in_world", kt_in_world),
 			def("prefetch_sound", prefetch_sound),
 
 			def("client_spawn_manager", get_client_spawn_manager),

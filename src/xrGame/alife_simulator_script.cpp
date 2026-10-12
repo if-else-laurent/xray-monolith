@@ -150,6 +150,13 @@ void remove_out_restriction(CALifeSimulator* alife, CSE_ALifeMonsterAbstract* mo
 
 u32 get_level_id(CALifeSimulator* self)
 {
+	// Seamless world experiment (kt): for scripts, the level of the world the actor stands on
+	if (g_pGameLevel)
+	{
+		const u32 location = Level().kt_location_id();
+		if (location != u32(-1)) // while the game is being loaded the level has no AI map yet
+			return (location);
+	}
 	return (self->graph().level().level_id());
 }
 

@@ -160,6 +160,8 @@ void CAI_Space::load(LPCSTR level_name)
 void CGameGraph::kt_claim()
 {
 	m_kt_chunk.clear();
+	m_kt_level.clear();
+	m_kt_world.clear();
 	m_kt_placed = false;
 	if (!kt_chunk_keys() || !g_kt_chunk.base[0]) return;
 	int base = -1;
@@ -185,10 +187,16 @@ void CGameGraph::kt_claim()
 	const u32 count = header().vertex_count();
 	m_kt_chunk.assign(count, s8(-1));
 	m_kt_node.resize(count);
+	m_kt_level.resize(count);
+	m_kt_world.assign(256, u8(0));
+	m_kt_world[base] = 1;
+	for (u32 i = 0; i < 256; i++)
+		if (chunk_of_level[i] >= 0) m_kt_world[i] = 1;
 	u32 claimed = 0;
 	for (u32 i = 0; i < count; i++)
 	{
 		m_kt_node[i] = m_nodes[i].tNodeID;
+		m_kt_level[i] = m_nodes[i].tLevelID;
 		const int chunk = chunk_of_level[m_nodes[i].tLevelID];
 		if (chunk < 0) continue;
 		m_kt_chunk[i] = s8(chunk);

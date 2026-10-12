@@ -30,6 +30,7 @@
 #include "ClimableObject.h"
 #include "level_graph.h"
 #include "ai_object_location.h"
+#include "game_graph.h"
 #include "mt_config.h"
 #include "phcommander.h"
 #include "map_manager.h"
@@ -1833,4 +1834,18 @@ bool CLevel::kt_reach(xr_vector<float>& metres)
 	metres.resize(1 + g_kt_chunk.pieces.size());
 	for (u32 i = 0; i < metres.size(); i++) metres[i] = graph.kt_reach(i, node);
 	return true;
+}
+
+// Seamless world experiment (kt): where in the world the actor is. The levels put together are one
+// level for the engine; this is the one of them the actor's vertex of the world graph came from.
+u32 CLevel::kt_location_id() const
+{
+	const CGameGraph& graph = ai().game_graph();
+	const u32 played = ai().get_level_graph() ? u32(ai().level_graph().level_id()) : u32(-1);
+	CActor* actor = Actor();
+	if (!actor || !graph.kt_placed()) return played;
+	const u32 vertex = actor->ai_location().game_vertex_id();
+	if (!graph.valid_vertex_id(vertex)) return played;
+	const u32 level = graph.kt_level(vertex);
+	return graph.kt_in_world(level) ? level : played;
 }

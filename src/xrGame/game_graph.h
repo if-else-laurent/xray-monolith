@@ -89,10 +89,20 @@ public:
 	bool kt_placed() const { return m_kt_placed; }
 	// the chunk (the order of -kt_chunk keys) the vertex came from; -1: not a chunk's
 	int kt_chunk(u32 vertex_id) const { return vertex_id < m_kt_chunk.size() ? int(m_kt_chunk[vertex_id]) : -1; }
+	// The level the vertex is on by the file, whatever kt_claim told it. The simulation takes the
+	// world for one place; names, maps and scripts want to know where in it a thing is.
+	GameGraph::_LEVEL_ID kt_level(u32 vertex_id) const
+	{
+		return vertex_id < m_kt_level.size() ? m_kt_level[vertex_id] : (m_nodes + vertex_id)->level_id();
+	}
+	// is the level a part of the world put together: the base level or one standing next to it
+	bool kt_in_world(u32 level_id) const { return level_id < m_kt_world.size() && m_kt_world[level_id]; }
 	// cross table cells for the nodes added to the base level's AI map
 	void kt_cross_cells(const class CLevelGraph& level_graph, xr_vector<CGameLevelCrossTable::CCell>& cells) const;
 private:
 	xr_vector<s8> m_kt_chunk;
+	xr_vector<GameGraph::_LEVEL_ID> m_kt_level; // the vertices' levels as the file has them
+	xr_vector<u8> m_kt_world; // by level id
 	xr_vector<u32> m_kt_node; // the vertices' nodes as the file has them
 	bool m_kt_placed;
 public:
