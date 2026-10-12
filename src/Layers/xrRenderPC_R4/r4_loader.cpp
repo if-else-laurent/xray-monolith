@@ -1129,8 +1129,10 @@ void CRender::Load3DFluid()
 // Seamless world experiment (kt): what the renderer thinks of sectors where the camera is. Grass,
 // the living and the hands are drawn only when the right sectors count as seen, so when they
 // vanish this tells which link of the chain is off.
+extern u32 kt_draws_report;
 void CRender::kt_report()
 {
+	kt_draws_report = 2;
 	auto number = [&](void* sector) -> int
 	{
 		if (!sector) return -1;

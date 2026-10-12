@@ -16,6 +16,8 @@
 
 #include "../../xrEngine/xr_object.h"
 
+extern u32 kt_draws_report;
+
 using namespace R_dsgraph;
 
 extern float r_ssaDISCARD;
@@ -700,6 +702,15 @@ void CDSGraphManager::r_dsgraph_capture_dynamic(CObject* O)
 						if (i_mask[CDSGraphManager::fl_normal] && !(spatial->spatial.type & STYPE_PARTICLE))
 							set_Object(renderable);
 
+						// seamless world experiment (kt): kt_piece also names what the dynamic part of the frame holds
+						if (kt_draws_report && i_mask[CDSGraphManager::fl_normal])
+						{
+							CObject* named = dynamic_cast<CObject*>(renderable);
+							Msg("* [kt draws] dynamic thing: %s (%s), type 0x%x, sphere %.1f %.1f %.1f r %.1f",
+							    named ? named->cName().c_str() : "?", named ? named->cNameSect().c_str() : "?",
+							    spatial->spatial.type, spatial->spatial.sphere.P.x, spatial->spatial.sphere.P.y,
+							    spatial->spatial.sphere.P.z, spatial->spatial.sphere.R);
+						}
 						renderable->renderable_Render(dcast_IPortalTraverser());
 						if (dbg)
 						{

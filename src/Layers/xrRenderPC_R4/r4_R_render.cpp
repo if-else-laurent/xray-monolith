@@ -60,6 +60,9 @@ void CRender::render_menu()
 
 extern u32 g_r;
 
+u32 kt_draws[7] = {};
+u32 kt_draws_report = 0;
+
 void CRender::Render()
 {
 	PIX_EVENT(CRender_Render);
@@ -154,8 +157,12 @@ void CRender::Render()
 		PIX_EVENT(DEFER_PART0_SPLIT);
 		// level, SPLIT
 		Target->phase_scene_begin();
+		// seamless world experiment (kt): kt_piece also tells how many draws each part of the frame made
+		kt_draws[0] = RCache.stat.calls;
 		GMBase.r_dsgraph_render_static(0);
+		kt_draws[1] = RCache.stat.calls;
 		GMBase.r_dsgraph_render_dynamic(0);
+		kt_draws[2] = RCache.stat.calls;
 		Target->disable_aniso();
 	}
 
@@ -184,10 +191,21 @@ void CRender::Render()
 		PIX_EVENT(DEFER_PART1_SPLIT);
 		// level
 		Target->phase_scene_begin();
+		kt_draws[3] = RCache.stat.calls;
 		GMBase.r_dsgraph_capture_hud();
 		GMBase.r_dsgraph_render_hud();
+		kt_draws[4] = RCache.stat.calls;
 		GMBase.r_dsgraph_render_lods(true,true);
+		kt_draws[5] = RCache.stat.calls;
 		if (Details) Details->Render();
+		kt_draws[6] = RCache.stat.calls;
+		if (kt_draws_report)
+		{
+			kt_draws_report--;
+			Msg("* [kt draws] static %u, dynamic %u, lights' queries %u, hud %u, lods %u, details %u",
+			    kt_draws[1] - kt_draws[0], kt_draws[2] - kt_draws[1], kt_draws[3] - kt_draws[2],
+			    kt_draws[4] - kt_draws[3], kt_draws[5] - kt_draws[4], kt_draws[6] - kt_draws[5]);
+		}
 		Target->phase_scene_end();
 	}
 
