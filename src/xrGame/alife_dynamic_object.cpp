@@ -158,6 +158,20 @@ static float kt_static_distance(CSE_ALifeDynamicObject* object, const Fvector& a
 	return (_max(distance, 0.f));
 }
 
+// Seamless world experiment (kt): the land the object stands on is not there - the geometry of its
+// level is let go or is about to be. Nothing comes online over nothing, and what is online leaves.
+// Until now only the distances kept that true: a level went further away than anything stays online.
+bool kt_land_absent(const CSE_ALifeDynamicObject* object)
+{
+	if (!g_kt_chunk.active || object->ID == 0 || object->ID_Parent != 0xffff || !ai().get_level_graph())
+		return (false);
+	const CLevelGraph& graph = ai().level_graph();
+	if (!graph.kt_own_vertex_count() || !graph.valid_vertex_id(object->m_tNodeID))
+		return (false);
+	const u8 piece = graph.kt_piece_of(object->m_tNodeID);
+	return (piece != 255 && !g_kt_chunk.present(piece));
+}
+
 void CSE_ALifeDynamicObject::try_switch_online()
 {
 	CSE_ALifeSchedulable* schedulable = smart_cast<CSE_ALifeSchedulable*>(this);
@@ -173,7 +187,7 @@ void CSE_ALifeDynamicObject::try_switch_online()
 			alife().scheduled().add(this);
 	}
 
-	if (!can_switch_online())
+	if (!can_switch_online() || kt_land_absent(this))
 	{
 		on_failed_switch_online();
 		return;
@@ -202,6 +216,12 @@ void CSE_ALifeDynamicObject::try_switch_online()
 
 void CSE_ALifeDynamicObject::try_switch_offline()
 {
+	if (kt_land_absent(this))
+	{
+		alife().switch_offline(this);
+		return;
+	}
+
 	if (!can_switch_offline())
 	{
 		if (can_switch_online() && kt_static_distance(this, alife().graph().actor()->o_Position) > g_kt_chunk.static_radius * 1.1f && g_kt_chunk.static_radius > 0.f)

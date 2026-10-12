@@ -226,6 +226,7 @@ public:
 	// Events
 	virtual void OnEvent(EVENT E, u64 P1, u64 P2);
 	virtual void _BCL OnFrame(void);
+	virtual bool kt_reach(xr_vector<float>& metres); // seamless world experiment (kt)
 	virtual void OnRender();
 
 	enum DBG_RENDER_FLAGS

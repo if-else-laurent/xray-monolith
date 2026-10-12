@@ -9,6 +9,8 @@
 #include "stdafx.h"
 #include "level_graph.h"
 #include "profiler.h"
+#include <queue>
+#include <functional>
 #ifndef AI_COMPILER
 #	include "../xrEngine/IGame_Level.h"
 #endif
@@ -79,6 +81,107 @@ CLevelGraph::~CLevelGraph()
 // different origin that end up in adjacent cells with free sides facing each other are made neighbours.
 //
 // The array is therefore two sorted runs, not one: the searches by cell look into both (kt_runs).
+// Seamless world experiment (kt): from where each level is a short walk. For every piece the map
+// is flooded from its border outwards, through the nodes of the others, as far as -kt_reach looks;
+// the rule that holds levels loaded then asks by the player's node. The way is counted over the
+// nodes, corners cut where both sides are open.
+void CLevelGraph::kt_build_reach()
+{
+	const u32 count = header().vertex_count();
+	m_kt_piece.assign(count, u8(0));
+	for (u32 n = m_kt_own_count; n < count; n++)
+	{
+		u32 chunk, local;
+		m_kt_piece[n] = kt_local(n, chunk, local) ? u8(chunk + 1) : u8(255);
+	}
+	m_kt_reach.clear();
+	const float limit = g_kt_chunk.reach_out;
+	if (limit <= 0.f) return;
+
+	CTimer timer;
+	timer.Start();
+	const u32 pieces = 1 + u32(g_kt_chunk.pieces.size());
+	m_kt_reach.resize(pieces);
+	const float cell = header().cell_size(), diagonal = cell * 1.41421356f;
+	// a link is to the next cell; the game's own maps have a stray one that leads far away
+	auto next_to = [&](u32 a, u32 b)
+	{
+		const Fvector A = vertex_position(a), B = vertex_position(b);
+		return _abs(A.x - B.x) + _abs(A.z - B.z) < cell * 2.5f;
+	};
+	typedef std::pair<float, u32> Item;
+	xr_vector<float> metres(count);
+	string256 report = "";
+	for (u32 p = 0; p < pieces; p++)
+	{
+		std::fill(metres.begin(), metres.end(), flt_max);
+		std::priority_queue<Item, xr_vector<Item>, std::greater<Item> > queue;
+		for (u32 n = 0; n < count; n++)
+		{
+			if (m_kt_piece[n] == p) continue;
+			const CVertex* V = vertex(n);
+			for (int k = 0; k < 4; k++)
+			{
+				const u32 to = V->link(k);
+				if (to < count && m_kt_piece[to] == p && next_to(n, to))
+				{
+					metres[n] = cell;
+					queue.push(Item(cell, n));
+					break;
+				}
+			}
+		}
+		xr_vector<std::pair<u32, float> >& table = m_kt_reach[p];
+		while (!queue.empty())
+		{
+			const Item top = queue.top();
+			queue.pop();
+			if (top.first > metres[top.second]) continue;
+			table.push_back(std::make_pair(top.second, top.first));
+			const CVertex* V = vertex(top.second);
+			u32 side[4];
+			for (int k = 0; k < 4; k++)
+			{
+				side[k] = V->link(k);
+				if (side[k] >= count || m_kt_piece[side[k]] == p || !next_to(top.second, side[k])) side[k] = u32(-1);
+			}
+			for (int k = 0; k < 4; k++)
+			{
+				if (side[k] == u32(-1)) continue;
+				float way = top.first + cell;
+				if (way <= limit && way < metres[side[k]])
+				{
+					metres[side[k]] = way;
+					queue.push(Item(way, side[k]));
+				}
+				if (side[(k + 1) & 3] == u32(-1)) continue;
+				const u32 corner = vertex(side[k])->link((k + 1) & 3);
+				if (corner >= count || m_kt_piece[corner] == p || !next_to(side[k], corner)) continue;
+				way = top.first + diagonal;
+				if (way <= limit && way < metres[corner])
+				{
+					metres[corner] = way;
+					queue.push(Item(way, corner));
+				}
+			}
+		}
+		std::sort(table.begin(), table.end());
+		string64 one;
+		xr_sprintf(one, " %u", u32(table.size()));
+		xr_strcat(report, one);
+	}
+	Msg("* [kt stream] reach: nodes within %.0f m of walking from the level and from each attached piece:%s; counted in %u ms", limit, report, timer.GetElapsed_ms());
+}
+
+float CLevelGraph::kt_reach(u32 piece, u32 node) const
+{
+	if (node >= m_kt_piece.size() || piece >= m_kt_reach.size()) return flt_max;
+	if (m_kt_piece[node] == piece) return 0.f;
+	const xr_vector<std::pair<u32, float> >& table = m_kt_reach[piece];
+	xr_vector<std::pair<u32, float> >::const_iterator I = std::lower_bound(table.begin(), table.end(), std::make_pair(node, 0.f));
+	return (I != table.end() && I->first == node) ? I->second : flt_max;
+}
+
 void CLevelGraph::kt_merge_chunk()
 {
 	struct Piece
@@ -363,6 +466,7 @@ void CLevelGraph::kt_merge_chunk()
 		Msg("* [kt chunk] AI map: %u nodes of the level and %u added (%u files) in %u x %u cells, %u links across the borders",
 		    H1.count, extra, u32(pieces.size()), column, row, stitched);
 		Msg("* [kt time] AI map merged: %u ms", kt_timer.GetElapsed_ms());
+		kt_build_reach();
 	}
 	for (u32 n = 0; n < pieces.size(); n++) FS.r_close(pieces[n].reader);
 }

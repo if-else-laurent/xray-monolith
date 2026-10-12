@@ -161,6 +161,34 @@ struct ENGINE_API KtChunk
 	// when the camera is further than <out> metres from its walkable box and taken in again nearer
 	// than <in>. 0 - everything stays loaded.
 	float stream_in, stream_out;
+	// -kt_reach <in>,<out>: within the distance of -kt_stream a level is held only when the player
+	// can soon walk there or sees it. Metres of walking over the AI map from the player's node to
+	// the nearest node of the level: nearer than <in> it is taken, beyond <out> it may go. A level
+	// behind a hill with the only way in through a far tunnel is not wanted on this side. 0 - off.
+	float reach_in, reach_out;
+	// -kt_sight <file under $game_levels$>,<in>,<out>: from where each level is seen, counted ahead
+	// by the tools. A grid over the world; a cell holds, for the level and every level attached
+	// (in the order of the keys), the metres to the nearest thing of it that is seen from there:
+	// 0xffff - nothing is seen, 0xfffe - nobody looked from here (then the distance alone decides).
+	float sight_in, sight_out, sight_x0, sight_z0, sight_cell;
+	u32 sight_nx, sight_nz, sight_pieces;
+	xr_vector<u16> sight;
+	enum { sight_none = 0xffff, sight_unknown = 0xfffe };
+	u16 sight_at(u32 piece, float x, float z) const // piece: 0 the level, 1.. the attached ones
+	{
+		if (sight.empty() || piece >= sight_pieces) return sight_unknown;
+		int ix = iFloor((x - sight_x0) / sight_cell), iz = iFloor((z - sight_z0) / sight_cell);
+		if (ix < 0 || iz < 0 || ix >= int(sight_nx) || iz >= int(sight_nz)) return sight_unknown;
+		return sight[(u32(iz) * sight_nx + u32(ix)) * sight_pieces + piece];
+	}
+	// Is the land of a piece there for things to stand on: its geometry is read and is not about to
+	// go. piece: 0 the level, 1.. the attached ones, as the AI map names them.
+	bool present(u32 piece) const
+	{
+		if (piece == 0) return base_loaded && base_wanted;
+		if (piece - 1 >= pieces.size()) return true;
+		return pieces[piece - 1].loaded && pieces[piece - 1].wanted;
+	}
 	// -kt_trim <piece>,<px>,<pz>,<nx>,<nz>,<radius>, any number: the AI nodes of the piece (0 the level,
 	// 1.. the attached levels) that lie beyond the line through (px, pz) on the side the normal
 	// points to, within the radius, are taken out of the map: nothing leads to them. Two levels
@@ -203,7 +231,7 @@ struct ENGINE_API KtChunk
 		return strict && (foreign(piece, a.x, a.z) || foreign(piece, b.x, b.z) || foreign(piece, c.x, c.z));
 	}
 
-	KtChunk() : configured(false), active(false), loading(false), current(0), fake_material(u32(-1)), static_radius(0), stream_in(0), stream_out(0), base_loaded(true), base_wanted(true), base_manual(false), base_has_walk(false), mask_x0(0), mask_z0(0), mask_cell(1), mask_nx(0), mask_nz(0), mask_pieces(0)
+	KtChunk() : configured(false), active(false), loading(false), current(0), fake_material(u32(-1)), static_radius(0), stream_in(0), stream_out(0), reach_in(0), reach_out(0), sight_in(0), sight_out(0), sight_x0(0), sight_z0(0), sight_cell(1), sight_nx(0), sight_nz(0), sight_pieces(0), base_loaded(true), base_wanted(true), base_manual(false), base_has_walk(false), mask_x0(0), mask_z0(0), mask_cell(1), mask_nx(0), mask_nz(0), mask_pieces(0)
 	{
 		name[0] = 0;
 		base[0] = 0;
@@ -277,6 +305,9 @@ public:
 
 	virtual void _BCL OnFrame(void);
 	void kt_stream_tick(); // seamless world experiment (kt): pieces taken in and let go on the move
+	// kt: metres of walking from the player to the level (0) and to every attached piece (1..);
+	// flt_max - further than -kt_reach looks. False: not known now, the distance alone decides.
+	virtual bool kt_reach(xr_vector<float>& metres) { return false; }
 	virtual void OnRender(void);
 
 	virtual shared_str OpenDemoFile(const char* demo_file_name) = 0;

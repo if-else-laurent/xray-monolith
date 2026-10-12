@@ -193,6 +193,8 @@ bool CSE_ALifeOnlineOfflineGroup::synchronize_location()
 	return (true);
 }
 
+bool kt_land_absent(const CSE_ALifeDynamicObject* object); // seamless world experiment (kt), alife_dynamic_object.cpp
+
 void CSE_ALifeOnlineOfflineGroup::try_switch_online()
 {
 	if (m_members.empty())
@@ -200,6 +202,12 @@ void CSE_ALifeOnlineOfflineGroup::try_switch_online()
 
 	if (!can_switch_online())
 		return;
+
+	if (kt_land_absent(this))
+	{
+		on_failed_switch_online();
+		return;
+	}
 
 	if (!can_switch_offline())
 	{
@@ -232,6 +240,12 @@ void CSE_ALifeOnlineOfflineGroup::try_switch_offline()
 {
 	if (m_members.empty())
 		return;
+
+	if (kt_land_absent(this))
+	{
+		alife().switch_offline(this);
+		return;
+	}
 
 	if (!can_switch_offline())
 		return;

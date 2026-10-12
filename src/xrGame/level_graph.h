@@ -259,6 +259,12 @@ public:
 	// Seamless world experiment (kt): the AI map of one more level merged into this one.
 	// 0 when nothing was merged; else the number of this level's own nodes, the chunk's follow.
 	u32 kt_own_vertex_count() const { return m_kt_own_count; }
+	// whose node it is: 0 the level's, 1.. of the attached level with that number (the order of the
+	// -kt_chunk keys), 255 nobody's (a small piece of AI map of our own)
+	u8 kt_piece_of(u32 node) const { return node < m_kt_piece.size() ? m_kt_piece[node] : u8(0); }
+	// metres of walking from the node to the nearest node of the piece (numbered as above); 0 on the
+	// piece itself, flt_max further than -kt_reach looks
+	float kt_reach(u32 piece, u32 node) const;
 	// for every added node: the node of this level it is reached from
 	const xr_vector<u32>& kt_like() const { return m_kt_like; }
 	// the number in the merged map of node `local` of chunk `chunk` (the order of -kt_chunk keys); u32(-1) if none
@@ -293,6 +299,11 @@ private:
 	xr_vector<KtRange> m_kt_ranges;
 	xr_vector<u32> m_kt_place, m_kt_order;
 	void kt_merge_chunk();
+	// whose every node is, and for every piece the nodes outside it from which it is a short walk
+	// (-kt_reach), sorted by node, with the metres
+	xr_vector<u8> m_kt_piece;
+	xr_vector<xr_vector<std::pair<u32, float> > > m_kt_reach;
+	void kt_build_reach();
 	u8* m_kt_storage;
 	u32 m_kt_own_count;
 	xr_vector<u32> m_kt_like;

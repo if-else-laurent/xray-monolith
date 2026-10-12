@@ -29,6 +29,7 @@
 #include "autosave_manager.h"
 #include "ClimableObject.h"
 #include "level_graph.h"
+#include "ai_object_location.h"
 #include "mt_config.h"
 #include "phcommander.h"
 #include "map_manager.h"
@@ -1814,4 +1815,22 @@ CZoneList::~CZoneList()
 {
 	clear();
 	destroy();
+}
+
+// Seamless world experiment (kt): how far the player is, on foot, from the level and from every
+// attached piece - for the rule that holds levels loaded (-kt_reach). Not known when the camera
+// is away from the actor (the free camera) or the actor is off the AI map.
+bool CLevel::kt_reach(xr_vector<float>& metres)
+{
+	if (!ai().get_level_graph() || !ai().level_graph().kt_own_vertex_count()) return false;
+	CActor* actor = Actor();
+	if (!actor) return false;
+	const CLevelGraph& graph = ai().level_graph();
+	const u32 node = actor->ai_location().level_vertex_id();
+	if (!graph.valid_vertex_id(node)) return false;
+	if (Device.vCameraPosition.distance_to_xz(actor->Position()) > 30.f) return false;
+	if (graph.vertex_position(node).distance_to_xz(actor->Position()) > 15.f) return false;
+	metres.resize(1 + g_kt_chunk.pieces.size());
+	for (u32 i = 0; i < metres.size(); i++) metres[i] = graph.kt_reach(i, node);
+	return true;
 }

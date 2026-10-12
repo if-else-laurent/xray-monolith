@@ -161,6 +161,39 @@ static void kt_chunk_setup()
 		if (g_kt_chunk.stream_out < g_kt_chunk.stream_in) g_kt_chunk.stream_out = g_kt_chunk.stream_in;
 		Msg("* [kt stream] neighbours are taken in nearer than %.0f m and let go beyond %.0f m", g_kt_chunk.stream_in, g_kt_chunk.stream_out);
 	}
+	if (LPCSTR k = strstr(Core.Params, "-kt_reach "))
+	{
+		sscanf(k + 10, "%f,%f", &g_kt_chunk.reach_in, &g_kt_chunk.reach_out);
+		if (g_kt_chunk.reach_out < g_kt_chunk.reach_in) g_kt_chunk.reach_out = g_kt_chunk.reach_in;
+		Msg("* [kt stream] within that, a neighbour is held when it is nearer than %.0f m of walking (let go beyond %.0f m) or is seen", g_kt_chunk.reach_in, g_kt_chunk.reach_out);
+	}
+	if (LPCSTR k = strstr(Core.Params, "-kt_sight "))
+	{
+		string_path name = "", file;
+		sscanf(k + 10, "%259[^, ],%f,%f", name, &g_kt_chunk.sight_in, &g_kt_chunk.sight_out);
+		if (g_kt_chunk.sight_out < g_kt_chunk.sight_in) g_kt_chunk.sight_out = g_kt_chunk.sight_in;
+		FS.update_path(file, "$game_levels$", name);
+		IReader* R = FS.exist(file) ? FS.r_open(file) : 0;
+		if (R && R->length() >= 28 && R->r_u32() == 0x5453544b) // "KTST"
+		{
+			g_kt_chunk.sight_pieces = R->r_u32();
+			g_kt_chunk.sight_x0 = R->r_float();
+			g_kt_chunk.sight_z0 = R->r_float();
+			g_kt_chunk.sight_cell = R->r_float();
+			g_kt_chunk.sight_nx = R->r_u32();
+			g_kt_chunk.sight_nz = R->r_u32();
+			u32 size = g_kt_chunk.sight_nx * g_kt_chunk.sight_nz * g_kt_chunk.sight_pieces;
+			if (size && u32(R->elapsed()) >= size * sizeof(u16))
+			{
+				g_kt_chunk.sight.resize(size);
+				R->r(&g_kt_chunk.sight[0], size * sizeof(u16));
+				Msg("* [kt stream] sight: %u x %u cells of %.1f m from %.1f, %.1f for %u levels; a neighbour seen nearer than %.0f m is taken, let go when nothing of it is seen within %.0f m",
+				    g_kt_chunk.sight_nx, g_kt_chunk.sight_nz, g_kt_chunk.sight_cell, g_kt_chunk.sight_x0, g_kt_chunk.sight_z0, g_kt_chunk.sight_pieces, g_kt_chunk.sight_in, g_kt_chunk.sight_out);
+			}
+		}
+		if (g_kt_chunk.sight.empty()) Msg("! [kt stream] cannot read the table of sight %s", file);
+		if (R) FS.r_close(R);
+	}
 	if (LPCSTR k = strstr(Core.Params, "-kt_fake "))
 		sscanf(k + 9, "%u", &g_kt_chunk.fake_material);
 	if (!g_kt_chunk.opens.empty())
@@ -315,6 +348,23 @@ static float kt_box_distance(const Fbox& box, const Fvector& C)
 }
 static CTimer kt_stream_timer;
 
+// What the rule says about a walkable piece: +1 take it in, -1 let it go, 0 leave it as it is.
+// piece: 0 the level, 1.. the attached ones. The distance to the box is the outer bound, as it was;
+// within it, with -kt_reach, the piece is wanted only when the way there is short or it is seen.
+static int kt_stream_rule(u32 piece, const Fbox& walk, bool loaded, const xr_vector<float>* reach)
+{
+	const Fvector& C = Device.vCameraPosition;
+	const float distance = kt_box_distance(walk, C);
+	if (distance > g_kt_chunk.stream_out) return loaded ? -1 : 0;
+	const u16 seen = g_kt_chunk.sight.empty() ? u16(KtChunk::sight_none) : g_kt_chunk.sight_at(piece, C.x, C.z);
+	if (g_kt_chunk.reach_in <= 0.f || !reach || piece >= reach->size() || seen == KtChunk::sight_unknown)
+		return (!loaded && distance < g_kt_chunk.stream_in) ? 1 : 0;
+	const float way = (*reach)[piece];
+	const float sight = seen == KtChunk::sight_none ? flt_max : float(seen);
+	if (loaded) return (way > g_kt_chunk.reach_out && sight > g_kt_chunk.sight_out) ? -1 : 0;
+	return (way < g_kt_chunk.reach_in || sight < g_kt_chunk.sight_in) ? 1 : 0;
+}
+
 void IGame_Level::kt_stream_tick()
 {
 	if (!g_kt_chunk.active || !bReady) return;
@@ -323,22 +373,24 @@ void IGame_Level::kt_stream_tick()
 	if (kt_stream_state == 0)
 	{
 		bool change = false;
+		static xr_vector<float> reach;
+		const bool reach_known = g_kt_chunk.reach_in > 0.f && g_kt_chunk.stream_in > 0.f && kt_reach(reach);
 		for (u32 i = 0; i < pieces.size(); i++)
 		{
 			KtPiece& P = pieces[i];
 			if (!P.manual && P.has_walk && g_kt_chunk.stream_in > 0.f)
 			{
-				const float distance = kt_box_distance(P.walk, Device.vCameraPosition);
-				if (P.loaded && distance > g_kt_chunk.stream_out) P.wanted = false;
-				else if (!P.loaded && distance < g_kt_chunk.stream_in) P.wanted = true;
+				const int rule = kt_stream_rule(i + 1, P.walk, P.loaded, reach_known ? &reach : 0);
+				if (rule < 0) P.wanted = false;
+				else if (rule > 0) P.wanted = true;
 			}
 			if (P.wanted != P.loaded) change = true;
 		}
 		if (!g_kt_chunk.base_manual && g_kt_chunk.base_has_walk && g_kt_chunk.stream_in > 0.f)
 		{
-			const float distance = kt_box_distance(g_kt_chunk.base_walk, Device.vCameraPosition);
-			if (g_kt_chunk.base_loaded && distance > g_kt_chunk.stream_out) g_kt_chunk.base_wanted = false;
-			else if (!g_kt_chunk.base_loaded && distance < g_kt_chunk.stream_in) g_kt_chunk.base_wanted = true;
+			const int rule = kt_stream_rule(0, g_kt_chunk.base_walk, g_kt_chunk.base_loaded, reach_known ? &reach : 0);
+			if (rule < 0) g_kt_chunk.base_wanted = false;
+			else if (rule > 0) g_kt_chunk.base_wanted = true;
 		}
 		// something walkable must stay
 		bool any = g_kt_chunk.base_wanted;
