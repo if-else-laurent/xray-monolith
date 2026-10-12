@@ -96,6 +96,17 @@ void MODEL::build_arrays(Fvector* V, int Vcnt, TRI* T, int Tcnt, build_callback*
 	if (bc) bc(verts, Vcnt, tris, Tcnt, bcp);
 }
 
+void MODEL::kt_swap(MODEL& other)
+{
+	syncronize();
+	other.syncronize();
+	std::swap(tree, other.tree);
+	std::swap(tris, other.tris);
+	std::swap(tris_count, other.tris_count);
+	std::swap(verts, other.verts);
+	std::swap(verts_count, other.verts_count);
+}
+
 void MODEL::build_tree()
 {
 	PROF_EVENT();

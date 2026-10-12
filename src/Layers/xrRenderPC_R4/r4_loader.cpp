@@ -174,10 +174,12 @@ void CRender::level_Unload()
 	//*** Visuals
 	for (I = 0; I < Visuals.size(); I++)
 	{
+		if (!Visuals[I]) continue; // a piece let go on the move
 		Visuals[I]->Release();
 		xr_delete(Visuals[I]);
 	}
 	Visuals.clear();
+	kt_loaded.clear();
 
 	//*** SWI
 	for (I = 0; I < SWIs.size(); I++)xr_free(SWIs[I].sw);
@@ -620,8 +622,113 @@ void CRender::kt_LoadChunk(u32 piece)
 	for (u32 i = 0; i < P.tri_count; i++)
 		tris[P.tri_base + i].sector += sector_base;
 
+	if (kt_loaded.size() <= piece)
+	{
+		kt_loaded_piece none;
+		ZeroMemory(&none, sizeof(none));
+		kt_loaded.resize(piece + 1, none);
+	}
+	kt_loaded_piece& L = kt_loaded[piece];
+	L.on = true;
+	L.shader0 = kt_base_shader; L.shader1 = u32(Shaders.size());
+	L.visual0 = kt_base_visual; L.visual1 = u32(Visuals.size());
+	L.vb0 = kt_base_vb; L.vb1 = u32(nVB.size());
+	L.ib0 = kt_base_ib; L.ib1 = u32(nIB.size());
+	L.xvb0 = kt_base_xvb; L.xvb1 = u32(xVB.size());
+	L.xib0 = kt_base_xib; L.xib1 = u32(xIB.size());
+	L.sector0 = sector_base; L.sector1 = u32(Sectors.size());
+	L.swis = kt_SWIs.back();
+
 	Msg("* [kt chunk] render of %s: %u shaders, %u visuals, %u sectors, VB %u, IB %u", P.name, u32(Shaders.size()) - kt_base_shader,
 	    u32(Visuals.size()) - kt_base_visual, u32(Sectors.size()) - sector_base, u32(nVB.size()) - kt_base_vb, u32(nIB.size()) - kt_base_ib);
+}
+
+// Seamless world experiment (kt): a piece taken out on the move. Its places in the containers stay
+// empty; read again, it goes to their ends.
+void CRender::kt_UnloadChunk(u32 piece)
+{
+	if (piece >= kt_loaded.size() || !kt_loaded[piece].on) return;
+	kt_loaded_piece& L = kt_loaded[piece];
+	u32 I;
+
+	// Sectors. Whatever stood in them (lights, particles, things) is told to look for its sector anew.
+	{
+		xr_vector<ISpatialShared> all;
+		Fvector centre = {0.f, 0.f, 0.f};
+		ISpatial_DB* spaces[3] = {g_SpatialSpace, g_SpatialSpaceLights, g_SpatialSpacePhysic};
+		for (u32 s = 0; s < 3; s++)
+		{
+			if (!spaces[s]) continue;
+			all.clear();
+			spaces[s]->q_sphere(all, 0, u32(-1), centre, 1000000.f);
+			for (ISpatialShared spatial : all)
+			{
+				if (!spatial || !spatial->spatial.sector) continue;
+				for (I = L.sector0; I < L.sector1; I++)
+					if ((void*)spatial->spatial.sector == (void*)Sectors[I])
+					{
+						spatial->spatial.sector = nullptr;
+						break;
+					}
+			}
+		}
+	}
+	for (I = L.sector0; I < L.sector1; I++)
+	{
+		if (pLastSector == Sectors[I]) pLastSector = pOutdoorSector;
+		for (u32 k = 0; k < g_kt_chunk.sectors.size(); k++)
+			if (g_kt_chunk.sectors[k] == (void*)Sectors[I])
+			{
+				g_kt_chunk.sectors.erase(g_kt_chunk.sectors.begin() + k);
+				break;
+			}
+		xr_delete(Sectors[I]);
+	}
+
+	for (I = L.visual0; I < L.visual1; I++)
+	{
+		if (!Visuals[I]) continue;
+		Visuals[I]->Release();
+		xr_delete(Visuals[I]);
+	}
+
+	if (L.swis)
+	{
+		for (I = 0; I < L.swis->size(); I++) xr_free((*L.swis)[I].sw);
+		for (u32 k = 0; k < kt_SWIs.size(); k++)
+			if (kt_SWIs[k] == L.swis)
+			{
+				kt_SWIs.erase(kt_SWIs.begin() + k);
+				break;
+			}
+		xr_delete(L.swis);
+	}
+
+	for (I = L.vb0; I < L.vb1; I++) _RELEASE(nVB[I]);
+	for (I = L.xvb0; I < L.xvb1; I++) _RELEASE(xVB[I]);
+	for (I = L.ib0; I < L.ib1; I++) _RELEASE(nIB[I]);
+	for (I = L.xib0; I < L.xib1; I++) _RELEASE(xIB[I]);
+	for (I = L.shader0; I < L.shader1; I++) Shaders[I] = ref_shader();
+
+	L.on = false;
+	Msg("* [kt chunk] render of %s is let go: %u visuals, %u sectors", g_kt_chunk.pieces[piece].name, L.visual1 - L.visual0, L.sector1 - L.sector0);
+}
+
+void CRender::kt_piece_render(u32 piece, bool on)
+{
+	if (on) kt_LoadChunk(piece);
+	else kt_UnloadChunk(piece);
+}
+
+// After the static collision model was rebuilt its triangles name the piece's sectors by the
+// piece's own numbers again.
+void CRender::kt_piece_sectors(u32 piece)
+{
+	if (piece >= kt_loaded.size() || !kt_loaded[piece].on) return;
+	CDB::TRI* tris = g_pGameLevel->ObjectSpace.GetStaticTris();
+	const KtPiece& P = g_kt_chunk.pieces[piece];
+	for (u32 i = 0; i < P.tri_count; i++)
+		tris[P.tri_base + i].sector += kt_loaded[piece].sector0;
 }
 
 void CRender::LoadVisuals(IReader* fs)

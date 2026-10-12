@@ -426,6 +426,29 @@ public:
 	}
 };
 
+// Seamless world experiment (kt): kt_piece <number> <0|1|2> - let a piece go, take it in, or give it
+// back to the distance rule; without arguments the pieces are listed.
+class CCC_KtPiece : public IConsole_Command
+{
+public:
+	CCC_KtPiece(LPCSTR N) : IConsole_Command(N) { bEmptyArgsHandled = TRUE; };
+
+	virtual void Execute(LPCSTR args)
+	{
+		u32 number = 0;
+		int mode = 0;
+		if (2 == sscanf(args, "%u %d", &number, &mode) && number < g_kt_chunk.pieces.size())
+		{
+			KtPiece& P = g_kt_chunk.pieces[number];
+			P.manual = mode != 2;
+			if (mode != 2) P.wanted = mode == 1;
+		}
+		for (u32 i = 0; i < g_kt_chunk.pieces.size(); i++)
+			Msg("* [kt stream] piece %u %s: %s%s", i, g_kt_chunk.pieces[i].name, g_kt_chunk.pieces[i].loaded ? "loaded" : "let go",
+			    g_kt_chunk.pieces[i].manual ? ", by hand" : "");
+	}
+};
+
 //-----------------------------------------------------------------------
 class CCC_PART_Export : public IConsole_Command
 {
@@ -1018,6 +1041,7 @@ void CCC_Register()
 	CMD1(CCC_Quit, "quit");
 	CMD1(CCC_Start, "start");
 	CMD1(CCC_Disconnect, "disconnect");
+	CMD1(CCC_KtPiece, "kt_piece");
 	CMD1(CCC_SaveCFG, "cfg_save");
 	CMD1(CCC_LoadCFG, "cfg_load");
 

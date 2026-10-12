@@ -109,6 +109,9 @@ namespace CDB
 		void build_tree();
 		void build_internal(Fvector* V, int Vcnt, TRI* T, int Tcnt, build_callback* bc = NULL, void* bcp = NULL);
 		void build(Fvector* V, int Vcnt, TRI* T, int Tcnt, build_callback* bc = NULL, void* bcp = NULL);
+		// Seamless world experiment (kt): two finished models change places. The static model of a
+		// level is rebuilt aside when a neighbour is taken in or let go, then put in between frames.
+		void kt_swap(MODEL& other);
 		u32 memory();
 	};
 

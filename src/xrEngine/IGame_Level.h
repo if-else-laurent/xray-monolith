@@ -63,6 +63,11 @@ struct KtPiece
 	Fvector offset;
 	u32 tri_base; // first triangle of the piece in the merged static collision model
 	u32 tri_count;
+	// Taking in and letting go on the move (-kt_stream, console kt_piece). `loaded`: its geometry and
+	// collisions are there now; `wanted`: they should be. The AI map and the objects stay always.
+	bool loaded, wanted, manual;
+	bool has_walk; // the piece has an AI map, `walk` is its box in the world
+	Fbox walk;
 };
 
 struct ENGINE_API KtChunk
@@ -152,6 +157,10 @@ struct ENGINE_API KtChunk
 	// lamps, things, zones) do it beyond this distance, as the living do beyond theirs. With several
 	// levels as one place there are too many of them to keep online all at once. 0 - as it was.
 	float static_radius;
+	// -kt_stream <in>,<out>: a level standing next to this one is let go (geometry, collisions, grass)
+	// when the camera is further than <out> metres from its walkable box and taken in again nearer
+	// than <in>. 0 - everything stays loaded.
+	float stream_in, stream_out;
 	// the piece whose files are being read by the renderer: 0 the level, 1.. the chunks
 	u32 reading() const { return loading ? current + 1 : 0; }
 
@@ -170,7 +179,7 @@ struct ENGINE_API KtChunk
 		return strict && (foreign(piece, a.x, a.z) || foreign(piece, b.x, b.z) || foreign(piece, c.x, c.z));
 	}
 
-	KtChunk() : configured(false), active(false), loading(false), current(0), fake_material(u32(-1)), static_radius(0), mask_x0(0), mask_z0(0), mask_cell(1), mask_nx(0), mask_nz(0), mask_pieces(0)
+	KtChunk() : configured(false), active(false), loading(false), current(0), fake_material(u32(-1)), static_radius(0), stream_in(0), stream_out(0), mask_x0(0), mask_z0(0), mask_cell(1), mask_nx(0), mask_nz(0), mask_pieces(0)
 	{
 		name[0] = 0;
 		base[0] = 0;
@@ -243,6 +252,7 @@ public:
 	virtual void Load_GameSpecific_CFORM(CDB::TRI* T, u32 count) = 0;
 
 	virtual void _BCL OnFrame(void);
+	void kt_stream_tick(); // seamless world experiment (kt): pieces taken in and let go on the move
 	virtual void OnRender(void);
 
 	virtual shared_str OpenDemoFile(const char* demo_file_name) = 0;

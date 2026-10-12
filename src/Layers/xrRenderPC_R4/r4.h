@@ -171,6 +171,17 @@ public:
 	xr_vector<xr_vector<FSlideWindowItem>*> kt_SWIs; // one set per piece
 	u32 kt_base_vb, kt_base_ib, kt_base_xvb, kt_base_xib;
 	void kt_LoadChunk(u32 piece);
+	// what a piece brought into the containers, to take it out again on the move
+	struct kt_loaded_piece
+	{
+		bool on;
+		u32 shader0, shader1, visual0, visual1, vb0, vb1, ib0, ib1, xvb0, xvb1, xib0, xib1, sector0, sector1;
+		xr_vector<FSlideWindowItem>* swis;
+	};
+	xr_vector<kt_loaded_piece> kt_loaded;
+	void kt_UnloadChunk(u32 piece);
+	virtual void kt_piece_render(u32 piece, bool on);
+	virtual void kt_piece_sectors(u32 piece);
 	// kt: where the geometry of the visuals that touch a cut box lies in the buffers of the file being read
 	struct kt_cut_range
 	{

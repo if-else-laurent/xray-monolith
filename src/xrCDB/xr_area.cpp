@@ -128,7 +128,10 @@ void CObjectSpace::Load(IReader* F, CDB::build_callback build_callback)
 	});
 }
 
-void CObjectSpace::LoadWithChunks(CDB::build_callback build_callback, xr_vector<KtCform>& chunks, bool (*cut)(u32 piece, u32 material, const Fvector& a, const Fvector& b, const Fvector& c))
+typedef bool (*kt_cut_function)(u32 piece, u32 material, const Fvector& a, const Fvector& b, const Fvector& c);
+
+// One set of arrays out of the level's collision file and the pieces': see LoadWithChunks.
+static void kt_gather(xr_vector<KtCform>& chunks, kt_cut_function cut, Fvector*& all_verts, u32& vert_count, CDB::TRI*& all_tris, u32& tri_count, Fbox& volume)
 {
 	IReader* F = FS.r_open("$level$", "level.cform");
 	R_ASSERT(F);
@@ -140,9 +143,9 @@ void CObjectSpace::LoadWithChunks(CDB::build_callback build_callback, xr_vector<
 
 	xr_vector<IReader*> readers(chunks.size());
 	xr_vector<hdrCFORM> headers(chunks.size());
-	u32 vert_count = H.vertcount;
-	u32 tri_count = H.facecount;
-	m_BoundingVolume.set(H.aabb);
+	vert_count = H.vertcount;
+	tri_count = H.facecount;
+	volume.set(H.aabb);
 	for (u32 c = 0; c < chunks.size(); c++)
 	{
 		readers[c] = FS.r_open(chunks[c].file);
@@ -154,13 +157,13 @@ void CObjectSpace::LoadWithChunks(CDB::build_callback build_callback, xr_vector<
 		Fbox box = headers[c].aabb;
 		box.min.add(chunks[c].offset);
 		box.max.add(chunks[c].offset);
-		m_BoundingVolume.merge(box);
+		volume.merge(box);
 	}
 
 	// One model for all: the vertices of a chunk are shifted, its triangles point at them.
 	// A triangle the experiment cuts out (a doorway, another level's land) is left out.
-	Fvector* all_verts = xr_alloc<Fvector>(vert_count);
-	CDB::TRI* all_tris = xr_alloc<CDB::TRI>(tri_count);
+	all_verts = xr_alloc<Fvector>(vert_count);
+	all_tris = xr_alloc<CDB::TRI>(tri_count);
 	CopyMemory(all_verts, verts, H.vertcount * sizeof(Fvector));
 	u32 kept = 0;
 	for (u32 i = 0; i < H.facecount; i++)
@@ -180,7 +183,7 @@ void CObjectSpace::LoadWithChunks(CDB::build_callback build_callback, xr_vector<
 			T.verts[0] += vert_base;
 			T.verts[1] += vert_base;
 			T.verts[2] += vert_base;
-			if (!cut(c + 1, T.material, all_verts[T.verts[0]], all_verts[T.verts[1]], all_verts[T.verts[2]])) all_tris[kept++] = T;
+			if (!cut(chunks[c].piece + 1, T.material, all_verts[T.verts[0]], all_verts[T.verts[1]], all_verts[T.verts[2]])) all_tris[kept++] = T;
 			else dropped++;
 		}
 		chunks[c].tri_count = kept - chunks[c].tri_base;
@@ -189,6 +192,17 @@ void CObjectSpace::LoadWithChunks(CDB::build_callback build_callback, xr_vector<
 	if (dropped) Msg("* [kt chunk] collision: %u triangles are cut out", dropped);
 	tri_count = kept;
 
+	FS.r_close(F);
+	for (u32 c = 0; c < chunks.size(); c++) FS.r_close(readers[c]);
+}
+
+void CObjectSpace::LoadWithChunks(CDB::build_callback build_callback, xr_vector<KtCform>& chunks, bool (*cut)(u32 piece, u32 material, const Fvector& a, const Fvector& b, const Fvector& c))
+{
+	Fvector* all_verts;
+	CDB::TRI* all_tris;
+	u32 vert_count, tri_count;
+	kt_gather(chunks, cut, all_verts, vert_count, all_tris, tri_count, m_BoundingVolume);
+
 	g_SpatialSpace->initialize(m_BoundingVolume);
 	g_SpatialSpacePhysic->initialize(m_BoundingVolume);
 	g_SpatialSpaceLights->initialize(m_BoundingVolume);
@@ -196,8 +210,6 @@ void CObjectSpace::LoadWithChunks(CDB::build_callback build_callback, xr_vector<
 	Static.build_arrays(all_verts, vert_count, all_tris, tri_count, build_callback);
 	xr_free(all_verts);
 	xr_free(all_tris);
-	FS.r_close(F);
-	for (u32 c = 0; c < chunks.size(); c++) FS.r_close(readers[c]);
 
 	const DWORD this_thread_id = GetCurrentThreadId();
 	Static.async_cform_load.run([this, this_thread_id]()
@@ -206,6 +218,26 @@ void CObjectSpace::LoadWithChunks(CDB::build_callback build_callback, xr_vector<
 		PROF_EVENT("Async cform tree build");
 		Static.build_tree();
 	});
+}
+
+// Seamless world experiment (kt): the same model for another set of pieces, built whole into
+// `target` (any thread); the level's own model is not touched until kt_SwapStatic.
+void CObjectSpace::kt_BuildModel(CDB::MODEL& target, CDB::build_callback build_callback, xr_vector<KtCform>& chunks, bool (*cut)(u32 piece, u32 material, const Fvector& a, const Fvector& b, const Fvector& c))
+{
+	Fvector* all_verts;
+	CDB::TRI* all_tris;
+	u32 vert_count, tri_count;
+	Fbox volume;
+	kt_gather(chunks, cut, all_verts, vert_count, all_tris, tri_count, volume);
+	target.build_arrays(all_verts, vert_count, all_tris, tri_count, build_callback);
+	xr_free(all_verts);
+	xr_free(all_tris);
+	target.build_tree();
+}
+
+void CObjectSpace::kt_SwapStatic(CDB::MODEL& fresh)
+{
+	Static.kt_swap(fresh);
 }
 
 void CObjectSpace::Create(Fvector* verts, CDB::TRI* tris, const hdrCFORM& H, CDB::build_callback build_callback, bool init_bounds)

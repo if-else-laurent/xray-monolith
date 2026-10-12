@@ -29,6 +29,7 @@ struct KtCform
 	string_path file;
 	Fvector offset;
 	u32 tri_base, tri_count; // filled in: where its triangles ended up
+	u32 piece; // its number among the pieces; the cut is asked with piece + 1 (0 is the level)
 };
 
 class XRCDB_API CObjectSpace
@@ -63,6 +64,8 @@ public:
 	// Seamless world experiment (kt): the level's collision mesh and, in the same static model, the
 	// mesh of one more level shifted by `offset`. Tells where that level's triangles lie in the model.
 	void LoadWithChunks(CDB::build_callback build_callback, xr_vector<KtCform>& chunks, bool (*cut)(u32 piece, u32 material, const Fvector& a, const Fvector& b, const Fvector& c));
+	void kt_BuildModel(CDB::MODEL& target, CDB::build_callback build_callback, xr_vector<KtCform>& chunks, bool (*cut)(u32 piece, u32 material, const Fvector& a, const Fvector& b, const Fvector& c));
+	void kt_SwapStatic(CDB::MODEL& fresh);
 	void Create(Fvector* verts, CDB::TRI* tris, const hdrCFORM& H, CDB::build_callback build_callback, bool init_bounds = true);
 	// Occluded/No
 	BOOL RayTest(const Fvector& start, const Fvector& dir, float range, collide::rq_target tgt,

@@ -319,6 +319,10 @@ public:
 
 	virtual void level_Load(IReader*) = 0;
 	virtual void level_Unload() = 0;
+	// seamless world experiment (kt): a piece's geometry dropped or read on the move; and its
+	// collision triangles told its sectors again after the static model was rebuilt
+	virtual void kt_piece_render(u32 piece, bool on) {}
+	virtual void kt_piece_sectors(u32 piece) {}
 
 	virtual size_t SectorsCount() { return size_t(0); }
 

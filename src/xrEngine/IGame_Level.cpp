@@ -59,6 +59,8 @@ static void kt_chunk_setup()
 		KtPiece piece;
 		piece.name[0] = 0;
 		piece.tri_base = piece.tri_count = 0;
+		piece.loaded = piece.wanted = piece.manual = false;
+		piece.has_walk = false;
 		if (4 != sscanf(key + 10, "%63[^, ],%f,%f,%f", piece.name, &piece.offset.x, &piece.offset.y, &piece.offset.z))
 		{
 			Msg("! [kt chunk] cannot read the key, expected -kt_chunk <level>,<x>,<y>,<z>");
@@ -71,6 +73,25 @@ static void kt_chunk_setup()
 		{
 			Msg("! [kt chunk] no such level: %s", file);
 			continue;
+		}
+		{
+			// the box of its AI map, if it has one: the header of level.ai
+			string_path ai;
+			FS.update_path(ai, "$game_levels$", piece.name);
+			xr_strcat(ai, "\\level.ai");
+			if (FS.exist(ai))
+			{
+				IReader* R = FS.r_open(ai);
+				if (R && R->length() >= 40)
+				{
+					R->advance(16);
+					R->r(&piece.walk, sizeof(Fbox));
+					piece.walk.min.add(piece.offset);
+					piece.walk.max.add(piece.offset);
+					piece.has_walk = true;
+				}
+				if (R) FS.r_close(R);
+			}
 		}
 		g_kt_chunk.pieces.push_back(piece);
 		Msg("* [kt chunk] level %s is added at %.2f, %.2f, %.2f", piece.name, piece.offset.x, piece.offset.y, piece.offset.z);
@@ -123,6 +144,12 @@ static void kt_chunk_setup()
 	{
 		sscanf(k + 18, "%f", &g_kt_chunk.static_radius);
 		Msg("* [kt world] objects that stay online on the level leave beyond %.0f m", g_kt_chunk.static_radius);
+	}
+	if (LPCSTR k = strstr(Core.Params, "-kt_stream "))
+	{
+		sscanf(k + 11, "%f,%f", &g_kt_chunk.stream_in, &g_kt_chunk.stream_out);
+		if (g_kt_chunk.stream_out < g_kt_chunk.stream_in) g_kt_chunk.stream_out = g_kt_chunk.stream_in;
+		Msg("* [kt stream] neighbours are taken in nearer than %.0f m and let go beyond %.0f m", g_kt_chunk.stream_in, g_kt_chunk.stream_out);
 	}
 	if (LPCSTR k = strstr(Core.Params, "-kt_fake "))
 		sscanf(k + 9, "%u", &g_kt_chunk.fake_material);
@@ -178,9 +205,17 @@ IGame_Level::IGame_Level()
 
 //#include "resourcemanager.h"
 
+static CDB::MODEL* kt_fresh;
+static xr_atomic_u32 kt_stream_state;
+static xr_task_group kt_stream_task;
+
 IGame_Level::~IGame_Level()
 {
 	Device.secondary_tasks.wait();
+	// seamless world experiment (kt): a collision model being built aside
+	kt_stream_task.wait();
+	xr_delete(kt_fresh);
+	kt_stream_state = 0;
 
 	if (Core.ParamsData.test(ECoreParams::nes_texture_storing))
 		Device.m_pRender->ResourcesStoreNecessaryTextures();
@@ -234,6 +269,130 @@ static void __stdcall build_callback(Fvector* V, int Vcnt, CDB::TRI* T, int Tcnt
 }
 
 xrCriticalSection lloadcs;
+// Seamless world experiment (kt): what the collision loader asks for every triangle and when done.
+static void kt_cform_built(Fvector* V, int Vcnt, CDB::TRI* T, int Tcnt, void* params)
+{
+	g_pGameLevel->Load_GameSpecific_CFORM(T, Tcnt);
+}
+
+static bool kt_cform_cut(u32 piece, u32 material, const Fvector& a, const Fvector& b, const Fvector& c)
+{
+	if (g_kt_chunk.opened(material, a, b, c)) return true;
+	// a big triangle is far scenery or a screen: it must not hang over the neighbour
+	const float big = 12.f * 12.f;
+	const bool strict = a.distance_to_sqr(b) > big || b.distance_to_sqr(c) > big || c.distance_to_sqr(a) > big;
+	// ground: by material, and only what lies flat enough to be walked on
+	Fvector n;
+	n.mknormal(a, b, c);
+	const bool is_ground = _abs(n.y) > .5f && g_kt_chunk.ground(material);
+	return g_kt_chunk.cut(piece, a, b, c, strict, is_ground);
+}
+
+// Pieces taken in and let go on the move. The static collision model is one for the level, so a
+// new one is built aside for the wanted set of pieces (a worker thread: reading, the tree), and on
+// the main thread between frames the models change places and the renderer drops or reads the
+// pieces' geometry. The AI map, the world graph and the objects are not touched: they are the
+// part of the world that is always there.
+// kt_fresh, kt_stream_state (0 idle, 1 building, 2 built) and kt_stream_task stand above, by the destructor
+static xr_vector<KtCform> kt_stream_job;
+static CTimer kt_stream_timer;
+
+void IGame_Level::kt_stream_tick()
+{
+	if (!g_kt_chunk.active || !bReady) return;
+	xr_vector<KtPiece>& pieces = g_kt_chunk.pieces;
+
+	if (kt_stream_state == 0)
+	{
+		bool change = false;
+		for (u32 i = 0; i < pieces.size(); i++)
+		{
+			KtPiece& P = pieces[i];
+			if (!P.manual && P.has_walk && g_kt_chunk.stream_in > 0.f)
+			{
+				const Fvector& C = Device.vCameraPosition;
+				const float dx = _max(_max(P.walk.min.x - C.x, C.x - P.walk.max.x), 0.f);
+				const float dz = _max(_max(P.walk.min.z - C.z, C.z - P.walk.max.z), 0.f);
+				const float distance = _sqrt(dx * dx + dz * dz);
+				if (P.loaded && distance > g_kt_chunk.stream_out) P.wanted = false;
+				else if (!P.loaded && distance < g_kt_chunk.stream_in) P.wanted = true;
+			}
+			if (P.wanted != P.loaded) change = true;
+		}
+		if (!change) return;
+
+		kt_stream_job.clear();
+		for (u32 i = 0; i < pieces.size(); i++)
+		{
+			if (!pieces[i].wanted) continue;
+			KtCform form;
+			FS.update_path(form.file, "$game_levels$", pieces[i].name);
+			xr_strcat(form.file, "\\level.cform");
+			form.offset = pieces[i].offset;
+			form.piece = i;
+			form.tri_base = form.tri_count = 0;
+			kt_stream_job.push_back(form);
+		}
+		kt_fresh = xr_new<CDB::MODEL>();
+		kt_stream_state = 1;
+		kt_stream_timer.Start();
+		kt_stream_task.run([this]()
+		{
+			ObjectSpace.kt_BuildModel(*kt_fresh, kt_cform_built, kt_stream_job, kt_cform_cut);
+			kt_stream_state = 2;
+		});
+		return;
+	}
+	if (kt_stream_state != 2) return;
+
+	kt_stream_task.wait();
+	Device.secondary_tasks.wait(); // nobody else is to be inside the model or the geometry now
+	const u32 built_ms = kt_stream_timer.GetElapsed_ms();
+	CTimer timer;
+	timer.Start();
+	ObjectSpace.kt_SwapStatic(*kt_fresh);
+	const u32 swap_ms = timer.GetElapsed_ms();
+	xr_delete(kt_fresh); // the model that served until now
+	const u32 freed_ms = timer.GetElapsed_ms();
+
+	xr_vector<u8> stays(pieces.size(), 0);
+	for (u32 i = 0; i < pieces.size(); i++) pieces[i].tri_base = pieces[i].tri_count = 0;
+	for (u32 n = 0; n < kt_stream_job.size(); n++)
+	{
+		KtPiece& P = pieces[kt_stream_job[n].piece];
+		P.tri_base = kt_stream_job[n].tri_base;
+		P.tri_count = kt_stream_job[n].tri_count;
+		stays[kt_stream_job[n].piece] = 1;
+	}
+	string256 gone = "", come = "";
+	for (u32 i = 0; i < pieces.size(); i++)
+		if (pieces[i].loaded && !stays[i])
+		{
+			Render->kt_piece_render(i, false);
+			pieces[i].loaded = false;
+			xr_strcat(gone, " ");
+			xr_strcat(gone, pieces[i].name);
+		}
+	const u32 gone_ms = timer.GetElapsed_ms();
+	for (u32 i = 0; i < pieces.size(); i++)
+	{
+		if (!stays[i]) continue;
+		if (pieces[i].loaded)
+			Render->kt_piece_sectors(i);
+		else
+		{
+			Render->kt_piece_render(i, true);
+			pieces[i].loaded = true;
+			xr_strcat(come, " ");
+			xr_strcat(come, pieces[i].name);
+		}
+	}
+	Sound->set_geometry_occ(ObjectSpace.GetStaticModel());
+	Msg("* [kt stream] let go:%s; taken in:%s. Collisions built aside in %u ms; on the main thread: swap %u, old model freed %u, geometry dropped %u, geometry read %u ms",
+	    gone[0] ? gone : " -", come[0] ? come : " -", built_ms, swap_ms, freed_ms - swap_ms, gone_ms - freed_ms, timer.GetElapsed_ms() - gone_ms);
+	kt_stream_state = 0;
+}
+
 bool IGame_Level::Load(u32 dwNum)
 {
 	PROF_EVENT("IGame_Level::Load");
@@ -275,20 +434,11 @@ bool IGame_Level::Load(u32 dwNum)
 			FS.update_path(cforms[i].file, "$game_levels$", g_kt_chunk.pieces[i].name);
 			xr_strcat(cforms[i].file, "\\level.cform");
 			cforms[i].offset = g_kt_chunk.pieces[i].offset;
+			cforms[i].piece = i;
+			g_kt_chunk.pieces[i].loaded = g_kt_chunk.pieces[i].wanted = true;
+			g_kt_chunk.pieces[i].manual = false;
 		}
-		ObjectSpace.LoadWithChunks([](Fvector* V, int Vcnt, CDB::TRI* T, int Tcnt, void* params) { g_pGameLevel->Load_GameSpecific_CFORM(T, Tcnt); },
-		                           cforms, [](u32 piece, u32 material, const Fvector& a, const Fvector& b, const Fvector& c)
-		                           {
-			                           if (g_kt_chunk.opened(material, a, b, c)) return true;
-			                           // a big triangle is far scenery or a screen: it must not hang over the neighbour
-			                           const float big = 12.f * 12.f;
-			                           const bool strict = a.distance_to_sqr(b) > big || b.distance_to_sqr(c) > big || c.distance_to_sqr(a) > big;
-			                           // ground: by material, and only what lies flat enough to be walked on
-			                           Fvector n;
-			                           n.mknormal(a, b, c);
-			                           const bool is_ground = _abs(n.y) > .5f && g_kt_chunk.ground(material);
-			                           return g_kt_chunk.cut(piece, a, b, c, strict, is_ground);
-		                           });
+		ObjectSpace.LoadWithChunks(kt_cform_built, cforms, kt_cform_cut);
 		for (u32 i = 0; i < cforms.size(); i++)
 		{
 			g_kt_chunk.pieces[i].tri_base = cforms[i].tri_base;
@@ -385,6 +535,7 @@ void IGame_Level::OnRender()
 void IGame_Level::OnFrame()
 {
 	PROF_EVENT("IGame_Level::OnFrame");
+	kt_stream_tick();
 	// Log ("- level:on-frame: ",u32(Device.dwFrame));
 	// if (_abs(Device.fTimeDelta)<EPS_S) return;
 
