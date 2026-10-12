@@ -374,7 +374,18 @@ void IGame_Level::kt_stream_tick()
 	{
 		bool change = false;
 		static xr_vector<float> reach;
-		const bool reach_known = g_kt_chunk.reach_in > 0.f && g_kt_chunk.stream_in > 0.f && kt_reach(reach);
+		static float reach_lost = 0.f; // seconds the walking distances have not been known
+		const bool reach_asked = g_kt_chunk.reach_in > 0.f && g_kt_chunk.stream_in > 0.f;
+		const bool reach_known = reach_asked && kt_reach(reach);
+		if (reach_known) reach_lost = 0.f;
+		else if (reach_asked)
+		{
+			// The actor was just put elsewhere and its node is still the old one: for a moment nothing
+			// is known, and the distance alone would take in every level around for nothing. Only when
+			// it lasts (the free camera, the actor off the AI map) the distance decides.
+			reach_lost += Device.fTimeDelta;
+			if (reach_lost < 3.f) return;
+		}
 		for (u32 i = 0; i < pieces.size(); i++)
 		{
 			KtPiece& P = pieces[i];
