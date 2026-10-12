@@ -50,6 +50,9 @@ CLevelGraph::CLevelGraph()
 	m_column_length = iFloor((header().box().max.x - header().box().min.x) / header().cell_size() + EPS_L + 1.5f);
 	m_access_mask.assign(header().vertex_count(), true);
 	unpack_xz(vertex_position(header().box().max), m_max_x, m_max_z);
+#ifndef AI_COMPILER
+	if (m_kt_own_count) kt_build_reach(); // after the row length is known: positions of nodes are asked
+#endif
 
 #ifdef DEBUG
 #	ifndef AI_COMPILER
@@ -466,7 +469,6 @@ void CLevelGraph::kt_merge_chunk()
 		Msg("* [kt chunk] AI map: %u nodes of the level and %u added (%u files) in %u x %u cells, %u links across the borders",
 		    H1.count, extra, u32(pieces.size()), column, row, stitched);
 		Msg("* [kt time] AI map merged: %u ms", kt_timer.GetElapsed_ms());
-		kt_build_reach();
 	}
 	for (u32 n = 0; n < pieces.size(); n++) FS.r_close(pieces[n].reader);
 }
