@@ -92,7 +92,15 @@ IC int dcTriListCollider::dSortTriPrimitiveCollide(
 	//VERIFY( g_pGameLevel );
 	CDB::TRI* T_array = inl_ph_world().ObjectSpace().GetStaticTris();
 	const Fvector* V_array = inl_ph_world().ObjectSpace().GetStaticVerts();
-	if (no_last_pos || !last_box.contains(box))
+	// seamless world experiment (kt): the static model was replaced, what is remembered of it is void
+	const bool kt_stale = data->kt_generation != g_kt_static_generation;
+	if (kt_stale)
+	{
+		data->kt_generation = g_kt_static_generation;
+		data->pushing_neg = data->pushing_b_neg = false;
+		data->neg_tri = data->b_neg_tri = 0;
+	}
+	if (no_last_pos || kt_stale || !last_box.contains(box))
 	{
 		Fvector aabb;
 		aabb.set(AABB);

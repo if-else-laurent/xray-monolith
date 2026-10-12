@@ -235,9 +235,12 @@ void CObjectSpace::kt_BuildModel(CDB::MODEL& target, CDB::build_callback build_c
 	target.build_tree();
 }
 
+XRCDB_API u32 g_kt_static_generation = 0;
+
 void CObjectSpace::kt_SwapStatic(CDB::MODEL& fresh)
 {
 	Static.kt_swap(fresh);
+	g_kt_static_generation++;
 }
 
 void CObjectSpace::Create(Fvector* verts, CDB::TRI* tris, const hdrCFORM& H, CDB::build_callback build_callback, bool init_bounds)

@@ -5,6 +5,7 @@
  #define dSINGLE
 #endif
 #include "PHObject.h"
+#include "../xrCDB/xr_area.h"
 //#include "ode_include.h"
 #include "../3rd party/ode/include/ode/common.h"
 #include "../3rd party/ode/include/ode/collision.h"
@@ -129,6 +130,7 @@ struct dxGeomUserData
 	u16 element_position;
 	u16 bone_id;
 	xr_vector<int> cashed_tries;
+	u32 kt_generation; // of the static model the cached triangles belong to (seamless world experiment)
 	Fvector last_aabb_size;
 	Fvector last_aabb_pos;
 
@@ -201,6 +203,7 @@ IC void dGeomCreateUserData(dxGeom* geom)
 	(dGeomGetUserData(geom))->element_position = u16(-1);
 	(dGeomGetUserData(geom))->bone_id = u16(-1);
 	(dGeomGetUserData(geom))->callback_data = NULL;
+	(dGeomGetUserData(geom))->kt_generation = g_kt_static_generation;
 
 	(dGeomGetUserData(geom))->last_aabb_size.set(0, 0, 0);
 	//((dxGeomUserData*)dGeomGetData(geom))->ContactsParameters::mu=1.f;

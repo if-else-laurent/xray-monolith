@@ -24,6 +24,10 @@ class CObject;
 struct hdrCFORM;
 
 // Seamless world experiment (kt): the collision mesh of one more level to merge into the static model
+// Seamless world experiment (kt): grows every time the static collision model is replaced on the
+// move. Whoever keeps numbers or pointers of its triangles between frames compares and asks anew.
+XRCDB_API extern u32 g_kt_static_generation;
+
 struct KtCform
 {
 	string_path file;
