@@ -182,7 +182,7 @@ CSE_ALifeDynamicObject* CALifeSimulator__create(CALifeSimulator* self, ALife::_S
 // numbers, and for a level standing next to the base one those are other numbers. Which frame a
 // triple is in can be told: a node of the vertex's own level, by the world's numbering, means the
 // world's frame. Otherwise the node is taken for the level's own and moved, with the place.
-static void kt_to_world(LPCSTR what, Fvector& position, u32& level_vertex_id, GameGraph::_GRAPH_ID game_vertex_id)
+void kt_to_world(LPCSTR what, Fvector& position, u32& level_vertex_id, GameGraph::_GRAPH_ID game_vertex_id)
 {
 	if (!ai().get_game_graph() || !ai().get_level_graph()) return;
 	const CGameGraph& graph = ai().game_graph();

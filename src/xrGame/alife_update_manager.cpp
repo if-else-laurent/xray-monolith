@@ -157,6 +157,8 @@ void CALifeUpdateManager::init_ef_storage() const
 	ai().ef_storage().alife_evaluation(true);
 }
 
+void kt_to_world(LPCSTR what, Fvector& position, u32& level_vertex_id, GameGraph::_GRAPH_ID game_vertex_id); // alife_simulator_script.cpp
+
 bool CALifeUpdateManager::change_level(NET_Packet& net_packet)
 {
 	if (m_changing_level)
@@ -194,6 +196,9 @@ bool CALifeUpdateManager::change_level(NET_Packet& net_packet)
 	net_packet.r(&graph().actor()->m_tNodeID, sizeof(graph().actor()->m_tNodeID));
 	net_packet.r_vec3(graph().actor()->o_Position);
 	net_packet.r_vec3(graph().actor()->o_Angle);
+	// Seamless world experiment (kt): a place of travel written for one level (routes, guides) comes
+	// in that level's own coordinates; the save that follows expects the world's
+	kt_to_world("the actor's travel", graph().actor()->o_Position, graph().actor()->m_tNodeID, graph().actor()->m_tGraphID);
 
 	Level().ClientSave();
 
