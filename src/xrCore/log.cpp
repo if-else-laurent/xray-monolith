@@ -164,7 +164,10 @@ void xrLogger::PauseLogging()
 
 void xrLogger::UnpauseLogging()
 {
-    if (bImmediateMode)
+    // kt: once the log is closed there is nothing to print and nowhere to; a flush asked for at the
+    // very end of the exit (immediate mode, -dbg) walked the freed records and crashed the game
+    // after everything else had been shut - the Wine debugger's window on every quit
+    if (bImmediateMode && bIsAlive)
         InternalPrintAllRecords();
     else
 	    SetEvent(hLogThread);
@@ -254,6 +257,9 @@ void xrLogger::InternalFlushLog()
 
 void xrLogger::FlushLog()
 {
+	if (theLogger == nullptr)
+		return;
+
 	theLogger->bFlushRequested = true;
 	theLogger->UnpauseLogging();
 }
