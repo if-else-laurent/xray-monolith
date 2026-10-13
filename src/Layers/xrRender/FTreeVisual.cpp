@@ -76,7 +76,8 @@ void FTreeVisual::Load(const char* N, IReader* data, u32 dwFlags)
 	{
 		data->r(&xform, sizeof(xform));
 		if (g_kt_chunk.loading) xform.c.add(g_kt_chunk.offset); // seamless world experiment (kt)
-		if (g_kt_chunk.active) kt_hidden = g_kt_chunk.foreign(g_kt_chunk.reading(), xform.c.x, xform.c.z);
+		if (g_kt_chunk.active)
+			kt_hidden = g_kt_chunk.foreign(g_kt_chunk.reading(), xform.c.x, xform.c.z) && !g_kt_chunk.replanted(g_kt_chunk.reading(), xform.c.x, xform.c.z);
 		if (g_kt_chunk.active)
 		{
 			// a tree on ground laid anew goes up or down with it

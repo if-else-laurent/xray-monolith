@@ -33,7 +33,18 @@ void FLOD::Load(LPCSTR N, IReader* data, u32 dwFlags)
 {
 	inherited::Load(N, data, dwFlags);
 
-	if (g_kt_chunk.active) kt_hidden = g_kt_chunk.foreign(g_kt_chunk.reading(), vis.sphere.P.x, vis.sphere.P.z); // seamless world experiment (kt)
+	// seamless world experiment (kt): hidden on another piece's land; kept on nobody's land that names
+	// this level, and moved with the ground made there, as the trees it stands for are
+	float kt_shift = 0.f;
+	if (g_kt_chunk.active)
+	{
+		kt_hidden = g_kt_chunk.foreign(g_kt_chunk.reading(), vis.sphere.P.x, vis.sphere.P.z) &&
+			!g_kt_chunk.replanted(g_kt_chunk.reading(), vis.sphere.P.x, vis.sphere.P.z);
+		kt_shift = g_kt_chunk.land_shift_at(vis.sphere.P.x, vis.sphere.P.z);
+		vis.sphere.P.y += kt_shift;
+		vis.box.min.y += kt_shift;
+		vis.box.max.y += kt_shift;
+	}
 	// LOD-def
 	R_ASSERT(data->find_chunk(OGF_LODDEF2));
 	for (int f = 0; f < 8; f++)
@@ -42,6 +53,8 @@ void FLOD::Load(LPCSTR N, IReader* data, u32 dwFlags)
 		_vertex* v = facets[f].v;
 		if (g_kt_chunk.loading) // seamless world experiment (kt)
 			for (int k = 0; k < 4; k++) v[k].v.add(g_kt_chunk.offset);
+		if (kt_shift != 0.f)
+			for (int k = 0; k < 4; k++) v[k].v.y += kt_shift;
 
 		Fvector N, T;
 		N.set(0, 0, 0);

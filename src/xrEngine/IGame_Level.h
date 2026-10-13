@@ -187,6 +187,14 @@ struct ENGINE_API KtChunk
 		if (ix < 0 || iz < 0 || ix >= int(mask_nx) || iz >= int(mask_nz)) return 0.f;
 		return float(land_shift[u32(iz) * mask_nx + u32(ix)]) * .1f;
 	}
+	// A level's trees on nobody's land that names that level stay, and go up or down with the new
+	// ground: the wood that stood between two levels stands on the slope made there.
+	bool replanted(u32 piece, float x, float z) const
+	{
+		if (land_shift.empty()) return false;
+		const u8 cell = mask_at(x, z);
+		return cell != 255 && u32(cell & 0x7f) == u32(120) + piece;
+	}
 	// Whose grass grows on nobody's land: the owners from 120 up name a level - 120 the base one,
 	// 121.. the attached ones as the mask numbers them; 126 and the like - nobody's, none.
 	enum { grass_owner_base = 120 };
