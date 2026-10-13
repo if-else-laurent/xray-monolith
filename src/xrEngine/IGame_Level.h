@@ -157,6 +157,13 @@ struct ENGINE_API KtChunk
 		u8 cell = mask_at(x, z);
 		return cell != 255 && (cell & 0x80);
 	}
+	// Nobody's land: a cell whose owner is no piece at all. The land between two levels is given to
+	// nobody and has ground of our own (tools/world_land.py of the build).
+	bool nobody(float x, float z) const
+	{
+		u8 cell = mask_at(x, z);
+		return cell != 255 && u32(cell & 0x7f) >= mask_pieces;
+	}
 	// -kt_ground <id>,<id>,...: the game materials that are ground (earth, gravel...), for collisions
 	xr_vector<u32> ground_materials;
 	bool ground(u32 material) const
@@ -239,6 +246,9 @@ struct ENGINE_API KtChunk
 		if (mask.empty() || piece >= mask_pieces) return false;
 		const float mx = (a.x + b.x + c.x) / 3, mz = (a.z + b.z + c.z) / 3;
 		if (foreign(piece, mx, mz)) return true;
+		// nothing of a level reaches into nobody's land even with a corner: a big triangle of ground
+		// or of water with its middle outside stood out of the relief made there
+		if (nobody(a.x, a.z) || nobody(b.x, b.z) || nobody(c.x, c.z)) return true;
 		if (is_ground && blended(piece, mx, mz)) return true;
 		return strict && (foreign(piece, a.x, a.z) || foreign(piece, b.x, b.z) || foreign(piece, c.x, c.z));
 	}
