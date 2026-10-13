@@ -267,8 +267,12 @@ struct ENGINE_API KtChunk
 	// triangles: one corner on foreign land is enough.
 	bool cut(u32 piece, const Fvector& a, const Fvector& b, const Fvector& c, bool strict = false, bool is_ground = false) const
 	{
-		for (u32 i = 0; i < cuts.size(); i++)
-			if (cuts[i].contains(a) && cuts[i].contains(b) && cuts[i].contains(c)) return true;
+		// the cut boxes take things out of the levels; a piece of our own (kt_...) laid in their place
+		// is not theirs to cut: the box of a span of rails took the ground of ours beside it, a hole
+		const bool ours = piece > 0 && piece - 1 < pieces.size() && 0 == strncmp(pieces[piece - 1].name, "kt_", 3);
+		if (!ours)
+			for (u32 i = 0; i < cuts.size(); i++)
+				if (cuts[i].contains(a) && cuts[i].contains(b) && cuts[i].contains(c)) return true;
 		if (mask.empty() || piece >= mask_pieces) return false;
 		const float mx = (a.x + b.x + c.x) / 3, mz = (a.z + b.z + c.z) / 3;
 		if (foreign(piece, mx, mz)) return true;
