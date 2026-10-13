@@ -271,6 +271,24 @@ static void kt_chunk_setup()
 		if (g_kt_chunk.mask.empty()) Msg("! [kt chunk] cannot read the mask %s", file);
 		if (R) FS.r_close(R);
 	}
+	if (LPCSTR k = strstr(params, "-kt_land "))
+	{
+		string_path name = "", file;
+		sscanf(k + 9, "%259[^ ]", name);
+		FS.update_path(file, "$game_levels$", name);
+		IReader* R = FS.exist(file) ? FS.r_open(file) : 0;
+		const u32 size = g_kt_chunk.mask_nx * g_kt_chunk.mask_nz;
+		if (R && size && R->length() >= 12 && R->r_u32() == 0x594c544b && R->r_u32() == g_kt_chunk.mask_nx && R->r_u32() == g_kt_chunk.mask_nz &&
+			u32(R->elapsed()) >= size * 2) // "KTLY"
+		{
+			g_kt_chunk.land_y.resize(size);
+			R->r(&g_kt_chunk.land_y[0], size * 2);
+			Msg("* [kt chunk] land: the heights of the ground of our own are read, %s", name);
+		}
+		else
+			Msg("! [kt chunk] cannot read the land's heights %s", file);
+		if (R) FS.r_close(R);
+	}
 	for (LPCSTR k = strstr(params, "-kt_ai_piece "); k; k = strstr(k + 1, "-kt_ai_piece "))
 	{
 		string_path piece = "";

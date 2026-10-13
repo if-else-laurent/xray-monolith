@@ -164,6 +164,21 @@ struct ENGINE_API KtChunk
 		u8 cell = mask_at(x, z);
 		return cell != 255 && u32(cell & 0x7f) >= mask_pieces;
 	}
+	// -kt_land <file under $game_levels$>: the height of the ground of our own, on the mask's grid
+	// (decimetres; -32768 where the ground is a level's). Grass is seated by a slot's own range of
+	// heights, a level's; where the ground was made anew that range is taken from here.
+	xr_vector<s16> land_y;
+	float land_at(float x, float z) const // flt_max: no ground of ours there
+	{
+		if (land_y.empty()) return flt_max;
+		int ix = iFloor((x - mask_x0) / mask_cell), iz = iFloor((z - mask_z0) / mask_cell);
+		if (ix < 0 || iz < 0 || ix >= int(mask_nx) || iz >= int(mask_nz)) return flt_max;
+		const s16 y = land_y[u32(iz) * mask_nx + u32(ix)];
+		return y == -32768 ? flt_max : float(y) * .1f;
+	}
+	// Whose grass grows on nobody's land: the owners from 120 up name a level - 120 the base one,
+	// 121.. the attached ones as the mask numbers them; 126 and the like - nobody's, none.
+	enum { grass_owner_base = 120 };
 	// -kt_ground <id>,<id>,...: the game materials that are ground (earth, gravel...), for collisions
 	xr_vector<u32> ground_materials;
 	bool ground(u32 material) const

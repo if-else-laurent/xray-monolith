@@ -273,12 +273,22 @@ DetailSlot& CDetailManager::QueryDB(int sx, int sz)
 		static thread_local DetailSlot DS;
 		const float wx = (float(sx) + .5f) * dm_slot_size, wz = (float(sz) + .5f) * dm_slot_size;
 		const u8 cell = g_kt_chunk.mask_at(wx, wz);
-		const u32 owner = (cell == 255) ? 0 : u32(cell & 0x7f);
+		u32 owner = (cell == 255) ? 0 : u32(cell & 0x7f);
+		// nobody's land (the land between two levels, ground of our own): the grass of the level
+		// the cell names, or none
+		if (cell != 255 && owner >= g_kt_chunk.mask_pieces)
+			owner = owner >= u32(g_kt_chunk.grass_owner_base) ? owner - u32(g_kt_chunk.grass_owner_base) : u32(-2);
+		// where the ground was made anew the slot's range of heights is the new ground's
+		const float land = g_kt_chunk.land_at(wx, wz);
 		if (owner != 0)
 		{
 			// the mask gives the place to an extra level: its grass or none
 			for (u32 i = 0; i < kt_grass.size(); i++)
-				if (kt_grass[i].piece + 1 == owner && g_kt_chunk.pieces[kt_grass[i].piece].loaded && kt_slot(kt_grass[i], wx, wz, DS)) return DS;
+				if (kt_grass[i].piece + 1 == owner && g_kt_chunk.pieces[kt_grass[i].piece].loaded && kt_slot(kt_grass[i], wx, wz, DS))
+				{
+					if (land != flt_max) DS.w_y(land - 1.f, 3.f);
+					return DS;
+				}
 			DS.w_id(0, DetailSlot::ID_Empty);
 			DS.w_id(1, DetailSlot::ID_Empty);
 			DS.w_id(2, DetailSlot::ID_Empty);
@@ -288,6 +298,13 @@ DetailSlot& CDetailManager::QueryDB(int sx, int sz)
 		// the level's own land, or nobody's: an extra level's grass only where the level has none
 		// and the mask does not know that level (a level joined through a tunnel)
 		int own_x = sx + dtH.offs_x, own_z = sz + dtH.offs_z;
+		if (land != flt_max && g_kt_chunk.base_loaded && (own_x >= 0) && (own_x < int(dtH.size_x)) && (own_z >= 0) && (own_z < int(dtH.size_z)))
+		{
+			// the level's own grass over ground of ours
+			DS = dtSlots[own_z * dtH.size_x + own_x];
+			DS.w_y(land - 1.f, 3.f);
+			return DS;
+		}
 		bool bare = !((own_x >= 0) && (own_x < int(dtH.size_x)) && (own_z >= 0) && (own_z < int(dtH.size_z)));
 		if (!bare)
 		{
