@@ -358,9 +358,27 @@ bool CMapLocation::Update() //returns actual
 extern xr_vector<CLevelChanger*> g_lchangers;
 xr_vector<u32> map_point_path;
 
-void CMapLocation::UpdateSpot(CUICustomMap* map, CMapSpot* sp)
+void CMapLocation::UpdateSpot(CUICustomMap* map, CMapSpot* sp, bool minimap)
 {
-	if (map->MapName() == GetLevelName())
+	// Seamless world (kt): the minimap is the map of the level the actor is on, and a spot of the
+	// neighbour level was not on it at all - a stalker 50 m away over a seam was not shown. The
+	// world's coordinates are common, so a spot of another level of the world that is near the
+	// actor is put on the minimap by them; far ones keep the pointer that leads to the passage.
+	bool kt_near = false;
+	Fvector2 kt_position;
+	if (minimap && map->MapName() != GetLevelName() && Actor() && Level().kt_level_in_world(*GetLevelName()) &&
+	    Level().kt_level_in_world(*map->MapName()))
+	{
+		const Fvector& actor = Actor()->Position();
+		const float dx = m_position_global.x - actor.x, dz = m_position_global.z - actor.z;
+		if (dx * dx + dz * dz < 200.f * 200.f)
+		{
+			const Fvector offset = Level().kt_level_offset(*map->MapName());
+			kt_position.set(m_position_global.x - offset.x, m_position_global.z - offset.z);
+			kt_near = true;
+		}
+	}
+	if (kt_near || map->MapName() == GetLevelName())
 	{
 		bool b_alife = !!ai().get_alife();
 
@@ -397,7 +415,7 @@ void CMapLocation::UpdateSpot(CUICustomMap* map, CMapSpot* sp)
 		}
 
 		//update spot position
-		Fvector2 position = GetPosition();
+		Fvector2 position = kt_near ? kt_position : GetPosition();
 
 		m_position_on_map = map->ConvertRealToLocal(position, (map->Heading()) ? false : true);
 		//for visibility calculating
@@ -586,7 +604,7 @@ void CMapLocation::UpdateMiniMap(CUICustomMap* map)
 	CMapSpot* sp = m_minimap_spot;
 	if (!sp) return;
 	if (SpotEnabled())
-		UpdateSpot(map, sp);
+		UpdateSpot(map, sp, true);
 }
 
 void CMapLocation::UpdateLevelMap(CUICustomMap* map)

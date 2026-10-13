@@ -69,7 +69,7 @@ private:
 	} //disable copy ctor
 
 protected :
-	void UpdateSpot(CUICustomMap* map, CMapSpot* sp);
+	void UpdateSpot(CUICustomMap* map, CMapSpot* sp, bool minimap = false);
 	void UpdateSpotPointer(CUICustomMap* map, CMapSpotPointer* sp);
 	void CalcLevelName();
 	CMapSpotPointer* GetSpotPointer(CMapSpot* sp);
