@@ -7,6 +7,7 @@
 ////////////////////////////////////////////////////////////////////////////
 
 #include "stdafx.h"
+#include "../xrEngine/IGame_Level.h"
 #include "xrServer_Objects_ALife_Monsters.h"
 #include "ai_space.h"
 #include "alife_simulator.h"
@@ -305,6 +306,10 @@ void CSE_ALifeOnlineOfflineGroup::switch_offline()
 {
 	R_ASSERT(m_bOnline);
 	m_bOnline = false;
+
+	// seamless world experiment (kt): the squad walks offline by its own brain, which was never told
+	// of the squad going offline; see CALifeMonsterDetailPathManager::on_switch_offline
+	if (g_kt_chunk.active) brain().on_switch_offline();
 
 	if (!m_members.empty())
 	{

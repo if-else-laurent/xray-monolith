@@ -11,6 +11,7 @@
 #include "ai_space.h"
 #include "alife_simulator.h"
 #include "alife_time_manager.h"
+#include "../xrEngine/IGame_Level.h"
 #include "xrServer_Objects_ALife_Monsters.h"
 #include "game_graph.h"
 #include "level_graph.h"
@@ -294,6 +295,13 @@ void CALifeMonsterDetailPathManager::on_switch_online()
 void CALifeMonsterDetailPathManager::on_switch_offline()
 {
 	m_path.clear();
+	// seamless world experiment (kt): the walk offline is paid by the time since the last update
+	// offline, and that update was before the object came online. One that spent ten minutes online
+	// and left covered ten minutes' worth of way at its first step offline - a squad seen walking
+	// to a seam was at its target a kilometre away seconds after it went out of sight. The time
+	// spent online is not the walk's.
+	if (g_kt_chunk.active && m_last_update_time)
+		m_last_update_time = ai().alife().time_manager().game_time();
 }
 
 Fvector CALifeMonsterDetailPathManager::draw_level_position() const
