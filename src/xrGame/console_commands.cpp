@@ -2536,6 +2536,9 @@ public:
     }
 };
 
+// seamless world experiment (kt): bit 1 - nobody sees, hears or remembers the actor
+Flags32 g_kt_ai = {0};
+
 void CCC_RegisterCommands()
 {
 	//Not needed for a singleplayer-only mod
@@ -2741,9 +2744,10 @@ void CCC_RegisterCommands()
 	CMD1(CCC_ShowAnimationStats, "ai_show_animation_stats");
 #endif // DEBUG
 
-#ifndef MASTER_GOLD
-	CMD3(CCC_Mask, "ai_ignore_actor", &psAI_Flags, aiIgnoreActor);
-#endif // MASTER_GOLD
+	// seamless world experiment (kt): there in every build - the one who tests the world is to watch
+	// it and not to be hunted through it; the seams' script switches it by its test aids. The
+	// game's own flag (aiIgnoreActor) lives only in the developers' builds.
+	CMD3(CCC_Mask, "ai_ignore_actor", &g_kt_ai, 1);
 
 	// Physics
 	CMD1(CCC_PHFps, "ph_frequency");

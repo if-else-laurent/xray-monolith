@@ -23,6 +23,9 @@
 #include "memory_manager.h"
 #include "../xrEngine/IGame_Persistent.h"
 
+// seamless world experiment (kt): ai_ignore_actor in every build, see console_commands.cpp
+extern Flags32 g_kt_ai;
+
 #ifndef MASTER_GOLD
 #	include "actor.h"
 #	include "ai_debug.h"
@@ -95,6 +98,7 @@ void CHitMemoryManager::reload(LPCSTR section)
 void CHitMemoryManager::add(float amount, const Fvector& vLocalDir, const CObject* who, s16 element)
 {
 	PROF_EVENT("HitMemory::add");
+	if (g_kt_ai.test(1) && who && smart_cast<CActor const*>(who)) return; // seamless world experiment (kt)
 #ifndef MASTER_GOLD
 	if (who && smart_cast<CActor const*>(who) && psAI_Flags.test(aiIgnoreActor))
 		return;

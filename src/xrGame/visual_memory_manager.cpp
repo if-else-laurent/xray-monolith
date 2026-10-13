@@ -36,6 +36,9 @@
 //Alundaio
 #include "../../xrServerEntities/script_engine.h"
 #include "script_game_object.h"
+
+// seamless world experiment (kt): ai_ignore_actor in every build, see console_commands.cpp
+extern Flags32 g_kt_ai;
  //Alundaio
 //-Alundaio
 
@@ -476,6 +479,7 @@ bool CVisualMemoryManager::should_ignore_object(CObject const* object) const
 		return true;
 	}
 
+	if (g_kt_ai.test(1) && smart_cast<CActor const*>(object)) return true; // seamless world experiment (kt)
 #ifndef MASTER_GOLD
 	if ( smart_cast<CActor const*>(object) && psAI_Flags.test(aiIgnoreActor) )
 	{

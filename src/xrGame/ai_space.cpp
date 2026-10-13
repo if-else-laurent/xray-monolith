@@ -205,14 +205,36 @@ void CGameGraph::kt_claim()
 	}
 	Msg("* [kt world] %u vertices of the world graph now belong to %s", claimed, g_kt_chunk.base);
 
-	// -kt_graph_seams: between the base level and the levels named, an edge stays only when its
-	// ends meet in the world. The points are still the levels' own here (kt_place moves them).
-	if (g_kt_chunk.graph_seams.empty()) return;
+	// The edges between the world's levels. The points are still the levels' own here (kt_place
+	// moves them). An edge whose ends meet in the world is a seam: the graph has it as long as the
+	// levels are apart on the game's map (the path to Marsh 161 m, in the world 3), and an offline
+	// squad stood at the seam for the time of walking that far. It gets its length in the world.
+	// -kt_graph_seams: between the base level and the levels named, the other edges are dropped.
 	const float meet = 100.f; // metres: the seams' edges are 3, 15 and 71 m long in the world, the rest 170 and more
-	u32 dropped = 0;
+	u32 dropped = 0, measured = 0;
 #pragma pack(push,1)
 	struct kt_edge { u16 vertex; float distance; };
 #pragma pack(pop)
+	for (u32 i = 0; i < count; i++)
+	{
+		CVertex& V = m_nodes[i];
+		kt_edge* edges = (kt_edge*)((u8*)m_nodes + V.dwEdgeOffset);
+		for (u32 e = 0; e < V.tNeighbourCount; e++)
+		{
+			const u32 to = edges[e].vertex;
+			if (to >= count || m_kt_level[i] == m_kt_level[to] || !m_kt_world[m_kt_level[i]] || !m_kt_world[m_kt_level[to]]) continue;
+			Fvector p = V.tLocalPoint, q = m_nodes[to].tLocalPoint;
+			if (m_kt_chunk[i] >= 0) p.add(g_kt_chunk.pieces[m_kt_chunk[i]].offset);
+			if (m_kt_chunk[to] >= 0) q.add(g_kt_chunk.pieces[m_kt_chunk[to]].offset);
+			const float real = p.distance_to(q);
+			if (real > meet) continue;
+			Msg("* [kt world] the world graph: edge %u -> %u is a seam, its length %.1f m becomes %.1f m", i, to, edges[e].distance, real);
+			edges[e].distance = real;
+			measured++;
+		}
+	}
+	if (measured) Msg("* [kt world] the world graph: %u edges of the seams got their length in the world", measured);
+	if (g_kt_chunk.graph_seams.empty()) return;
 	for (u32 i = 0; i < count; i++)
 	{
 		CVertex& V = m_nodes[i];

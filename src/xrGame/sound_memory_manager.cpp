@@ -29,6 +29,9 @@
 #include "stalker_planner.h"
 #include "ai_sounds.h"
 
+// seamless world experiment (kt): ai_ignore_actor in every build, see console_commands.cpp
+extern Flags32 g_kt_ai;
+
 #ifndef MASTER_GOLD
 #	include "actor.h"
 #	include "ai_debug.h"
@@ -133,6 +136,7 @@ void CSoundMemoryManager::feel_sound_new(CObject* object, int sound_type, CSound
                                          const Fvector& position, float sound_power)
 {
 	PROF_EVENT("SoundMemory::feel_sound_new");
+	if (g_kt_ai.test(1) && object && smart_cast<CActor*>(object)) return; // seamless world experiment (kt)
 #ifndef MASTER_GOLD
 	if (object && smart_cast<CActor*>(object) && psAI_Flags.test(aiIgnoreActor))
 		return;
