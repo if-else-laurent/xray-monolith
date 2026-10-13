@@ -86,6 +86,10 @@ struct ENGINE_API KtChunk
 	// a wall that used to close the level.
 	xr_vector<Fbox> cuts;
 	// occluders wholly inside these boxes are dropped: a place the level was never seen from, now walked through
+	// -kt_graph_seams <level>[,<level>...]: between the base level and these the world graph keeps
+	// only the edges whose ends meet in the world (the seams). The game's other passages between
+	// them are not there to walk, and offline squads crossed by them in one jump.
+	xr_vector<shared_str> graph_seams;
 	xr_vector<Fbox> hom_cuts;
 	bool hom_cut(const Fvector& a, const Fvector& b, const Fvector& c) const
 	{

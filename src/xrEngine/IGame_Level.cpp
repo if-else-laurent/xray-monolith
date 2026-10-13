@@ -144,6 +144,15 @@ static void kt_chunk_setup()
 		g_kt_chunk.cuts.push_back(box);
 		Msg("* [kt chunk] cut: %.2f, %.2f, %.2f - %.2f, %.2f, %.2f", box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z);
 	}
+	if (LPCSTR k = strstr(params, "-kt_graph_seams "))
+	{
+		string256 list = "";
+		sscanf(k + 16, "%255[^ ]", list);
+		strlwr(list);
+		string64 name;
+		for (int i = 0, n = _GetItemCount(list); i < n; i++)
+			g_kt_chunk.graph_seams.push_back(_GetItem(list, i, name));
+	}
 	for (LPCSTR k = strstr(params, "-kt_hom_cut "); k; k = strstr(k + 1, "-kt_hom_cut "))
 	{
 		Fvector a, b;

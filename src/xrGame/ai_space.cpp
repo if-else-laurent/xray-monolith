@@ -204,6 +204,51 @@ void CGameGraph::kt_claim()
 		claimed++;
 	}
 	Msg("* [kt world] %u vertices of the world graph now belong to %s", claimed, g_kt_chunk.base);
+
+	// -kt_graph_seams: between the base level and the levels named, an edge stays only when its
+	// ends meet in the world. The points are still the levels' own here (kt_place moves them).
+	if (g_kt_chunk.graph_seams.empty()) return;
+	const float meet = 100.f; // metres: the seams' edges are 3, 15 and 71 m long in the world, the rest 170 and more
+	u32 dropped = 0;
+#pragma pack(push,1)
+	struct kt_edge { u16 vertex; float distance; };
+#pragma pack(pop)
+	for (u32 i = 0; i < count; i++)
+	{
+		CVertex& V = m_nodes[i];
+		kt_edge* edges = (kt_edge*)((u8*)m_nodes + V.dwEdgeOffset);
+		for (u32 e = 0; e < V.tNeighbourCount;)
+		{
+			const u32 to = edges[e].vertex;
+			const int a = m_kt_chunk[i], b = to < count ? m_kt_chunk[to] : -1;
+			const bool in_world = to < count && m_kt_level[i] != m_kt_level[to] && m_kt_world[m_kt_level[i]] && m_kt_world[m_kt_level[to]];
+			bool named = false;
+			if (in_world)
+				for (u32 n = 0; n < g_kt_chunk.graph_seams.size(); n++)
+					for (int side = 0; side < 2; side++)
+					{
+						const int chunk = side ? b : a, other = side ? a : b;
+						// the level named on one end, the base level or another named one on the other
+						if (chunk >= 0 && 0 == stricmp(g_kt_chunk.pieces[chunk].name, *g_kt_chunk.graph_seams[n]) && other < 0) named = true;
+					}
+			if (named)
+			{
+				Fvector p = V.tLocalPoint, q = m_nodes[to].tLocalPoint;
+				if (a >= 0) p.add(g_kt_chunk.pieces[a].offset);
+				if (b >= 0) q.add(g_kt_chunk.pieces[b].offset);
+				if (p.distance_to(q) > meet)
+				{
+					Msg("* [kt world] the world graph: edge %u -> %u is dropped, its ends are %.0f m apart in the world", i, to, p.distance_to(q));
+					edges[e] = edges[V.tNeighbourCount - 1];
+					V.tNeighbourCount--;
+					dropped++;
+					continue;
+				}
+			}
+			e++;
+		}
+	}
+	Msg("* [kt world] the world graph: %u edges between levels that do not meet are dropped", dropped);
 }
 
 void CGameGraph::kt_place(const CLevelGraph& level_graph)
