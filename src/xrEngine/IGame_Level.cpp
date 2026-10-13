@@ -144,6 +144,11 @@ static void kt_chunk_setup()
 		g_kt_chunk.cuts.push_back(box);
 		Msg("* [kt chunk] cut: %.2f, %.2f, %.2f - %.2f, %.2f, %.2f", box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z);
 	}
+	for (LPCSTR k = strstr(params, "-kt_graph_way "); k; k = strstr(k + 1, "-kt_graph_way "))
+	{
+		KtChunk::GraphWay W;
+		if (3 == sscanf(k + 14, "%u,%u,%f", &W.a, &W.b, &W.length)) g_kt_chunk.graph_ways.push_back(W);
+	}
 	if (LPCSTR k = strstr(params, "-kt_graph_seams "))
 	{
 		string256 list = "";

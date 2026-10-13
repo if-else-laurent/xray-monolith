@@ -90,6 +90,17 @@ struct ENGINE_API KtChunk
 	// only the edges whose ends meet in the world (the seams). The game's other passages between
 	// them are not there to walk, and offline squads crossed by them in one jump.
 	xr_vector<shared_str> graph_seams;
+	// -kt_graph_way <vertex>,<vertex>,<metres>, any number: an edge of the world graph that is a seam's
+	// way although its ends do not meet in the world - a sleeve of our own leads from one to the
+	// other (the corridor along the joined railways). It is kept, with the length of the walk.
+	struct GraphWay { u32 a, b; float length; };
+	xr_vector<GraphWay> graph_ways;
+	float graph_way(u32 a, u32 b) const // metres, or 0 when the edge is not such a way
+	{
+		for (u32 i = 0; i < graph_ways.size(); i++)
+			if ((graph_ways[i].a == a && graph_ways[i].b == b) || (graph_ways[i].a == b && graph_ways[i].b == a)) return graph_ways[i].length;
+		return 0.f;
+	}
 	xr_vector<Fbox> hom_cuts;
 	bool hom_cut(const Fvector& a, const Fvector& b, const Fvector& c) const
 	{

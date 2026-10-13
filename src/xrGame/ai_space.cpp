@@ -258,6 +258,13 @@ void CGameGraph::kt_claim()
 				Fvector p = V.tLocalPoint, q = m_nodes[to].tLocalPoint;
 				if (a >= 0) p.add(g_kt_chunk.pieces[a].offset);
 				if (b >= 0) q.add(g_kt_chunk.pieces[b].offset);
+				if (const float way = g_kt_chunk.graph_way(i, to))
+				{
+					Msg("* [kt world] the world graph: edge %u -> %u is a seam's way of our own, its length %.1f m becomes %.1f m", i, to, edges[e].distance, way);
+					edges[e].distance = way;
+					e++;
+					continue;
+				}
 				if (p.distance_to(q) > meet)
 				{
 					Msg("* [kt world] the world graph: edge %u -> %u is dropped, its ends are %.0f m apart in the world", i, to, p.distance_to(q));
