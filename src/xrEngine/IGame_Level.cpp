@@ -54,7 +54,31 @@ ENGINE_API bool kt_chunk_wanted()
 static void kt_chunk_setup()
 {
 	g_kt_chunk = KtChunk();
-	for (LPCSTR key = strstr(Core.Params, "-kt_chunk "); key; key = strstr(key + 1, "-kt_chunk "))
+	// The keys of the world: the command line and, with -kt_world <file>, a file of the same keys
+	// under the levels' folder. The engine reads the command line into 2048 characters, and the
+	// description of four levels with their seams had come to 1200.
+	static xr_string keys;
+	keys = Core.Params;
+	if (LPCSTR k = strstr(Core.Params, "-kt_world "))
+	{
+		string_path name = "", file;
+		sscanf(k + 10, "%259[^ ]", name);
+		FS.update_path(file, "$game_levels$", name);
+		IReader* R = FS.exist(file) ? FS.r_open(file) : nullptr;
+		if (R)
+		{
+			keys += " ";
+			keys.append((LPCSTR)R->pointer(), R->length());
+			keys += " ";
+			for (size_t c = 0; c < keys.size(); c++)
+				if (keys[c] == '\r' || keys[c] == '\n' || keys[c] == '\t') keys[c] = ' ';
+			Msg("* [kt chunk] the world's keys: %s, %d characters", file, R->length());
+			FS.r_close(R);
+		}
+		else Msg("! [kt chunk] cannot read the world's keys %s", file);
+	}
+	LPCSTR const params = keys.c_str();
+	for (LPCSTR key = strstr(params, "-kt_chunk "); key; key = strstr(key + 1, "-kt_chunk "))
 	{
 		KtPiece piece;
 		piece.name[0] = 0;
@@ -99,13 +123,13 @@ static void kt_chunk_setup()
 	if (g_kt_chunk.pieces.empty()) return;
 	g_kt_chunk.select(0);
 	g_kt_chunk.configured = true;
-	if (LPCSTR k = strstr(Core.Params, "-kt_chunk_base "))
+	if (LPCSTR k = strstr(params, "-kt_chunk_base "))
 	{
 		sscanf(k + 15, "%63[^ ]", g_kt_chunk.base);
 		strlwr(g_kt_chunk.base);
 	}
 
-	for (LPCSTR k = strstr(Core.Params, "-kt_cut "); k; k = strstr(k + 1, "-kt_cut "))
+	for (LPCSTR k = strstr(params, "-kt_cut "); k; k = strstr(k + 1, "-kt_cut "))
 	{
 		Fvector a, b;
 		if (6 != sscanf(k + 8, "%f,%f,%f,%f,%f,%f", &a.x, &a.y, &a.z, &b.x, &b.y, &b.z))
@@ -120,7 +144,7 @@ static void kt_chunk_setup()
 		g_kt_chunk.cuts.push_back(box);
 		Msg("* [kt chunk] cut: %.2f, %.2f, %.2f - %.2f, %.2f, %.2f", box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z);
 	}
-	for (LPCSTR k = strstr(Core.Params, "-kt_hom_cut "); k; k = strstr(k + 1, "-kt_hom_cut "))
+	for (LPCSTR k = strstr(params, "-kt_hom_cut "); k; k = strstr(k + 1, "-kt_hom_cut "))
 	{
 		Fvector a, b;
 		if (6 != sscanf(k + 12, "%f,%f,%f,%f,%f,%f", &a.x, &a.y, &a.z, &b.x, &b.y, &b.z))
@@ -134,7 +158,7 @@ static void kt_chunk_setup()
 		box.modify(b);
 		g_kt_chunk.hom_cuts.push_back(box);
 	}
-	for (LPCSTR k = strstr(Core.Params, "-kt_open "); k; k = strstr(k + 1, "-kt_open "))
+	for (LPCSTR k = strstr(params, "-kt_open "); k; k = strstr(k + 1, "-kt_open "))
 	{
 		Fvector a, b;
 		if (6 != sscanf(k + 9, "%f,%f,%f,%f,%f,%f", &a.x, &a.y, &a.z, &b.x, &b.y, &b.z)) continue;
@@ -144,7 +168,7 @@ static void kt_chunk_setup()
 		box.modify(b);
 		g_kt_chunk.opens.push_back(box);
 	}
-	if (LPCSTR k = strstr(Core.Params, "-kt_ground "))
+	if (LPCSTR k = strstr(params, "-kt_ground "))
 	{
 		string256 list = "";
 		sscanf(k + 11, "%255[^ ]", list);
@@ -154,12 +178,12 @@ static void kt_chunk_setup()
 			g_kt_chunk.ground_materials.push_back(u32(atoi(_GetItem(list, i, item))));
 		}
 	}
-	if (LPCSTR k = strstr(Core.Params, "-kt_static_radius "))
+	if (LPCSTR k = strstr(params, "-kt_static_radius "))
 	{
 		sscanf(k + 18, "%f", &g_kt_chunk.static_radius);
 		Msg("* [kt world] objects that stay online on the level leave beyond %.0f m", g_kt_chunk.static_radius);
 	}
-	for (LPCSTR k = strstr(Core.Params, "-kt_trim "); k; k = strstr(k + 1, "-kt_trim "))
+	for (LPCSTR k = strstr(params, "-kt_trim "); k; k = strstr(k + 1, "-kt_trim "))
 	{
 		KtChunk::Trim T;
 		if (6 != sscanf(k + 9, "%u,%f,%f,%f,%f,%f", &T.piece, &T.px, &T.pz, &T.nx, &T.nz, &T.radius))
@@ -169,19 +193,19 @@ static void kt_chunk_setup()
 		}
 		g_kt_chunk.trims.push_back(T);
 	}
-	if (LPCSTR k = strstr(Core.Params, "-kt_stream "))
+	if (LPCSTR k = strstr(params, "-kt_stream "))
 	{
 		sscanf(k + 11, "%f,%f", &g_kt_chunk.stream_in, &g_kt_chunk.stream_out);
 		if (g_kt_chunk.stream_out < g_kt_chunk.stream_in) g_kt_chunk.stream_out = g_kt_chunk.stream_in;
 		Msg("* [kt stream] neighbours are taken in nearer than %.0f m and let go beyond %.0f m", g_kt_chunk.stream_in, g_kt_chunk.stream_out);
 	}
-	if (LPCSTR k = strstr(Core.Params, "-kt_reach "))
+	if (LPCSTR k = strstr(params, "-kt_reach "))
 	{
 		sscanf(k + 10, "%f,%f", &g_kt_chunk.reach_in, &g_kt_chunk.reach_out);
 		if (g_kt_chunk.reach_out < g_kt_chunk.reach_in) g_kt_chunk.reach_out = g_kt_chunk.reach_in;
 		Msg("* [kt stream] within that, a neighbour is held when it is nearer than %.0f m of walking (let go beyond %.0f m) or is seen", g_kt_chunk.reach_in, g_kt_chunk.reach_out);
 	}
-	if (LPCSTR k = strstr(Core.Params, "-kt_sight "))
+	if (LPCSTR k = strstr(params, "-kt_sight "))
 	{
 		string_path name = "", file;
 		sscanf(k + 10, "%259[^, ],%f,%f", name, &g_kt_chunk.sight_in, &g_kt_chunk.sight_out);
@@ -208,11 +232,11 @@ static void kt_chunk_setup()
 		if (g_kt_chunk.sight.empty()) Msg("! [kt stream] cannot read the table of sight %s", file);
 		if (R) FS.r_close(R);
 	}
-	if (LPCSTR k = strstr(Core.Params, "-kt_fake "))
+	if (LPCSTR k = strstr(params, "-kt_fake "))
 		sscanf(k + 9, "%u", &g_kt_chunk.fake_material);
 	if (!g_kt_chunk.opens.empty())
 		Msg("* [kt chunk] %u boxes where walls of material %u are taken away", u32(g_kt_chunk.opens.size()), g_kt_chunk.fake_material);
-	if (LPCSTR k = strstr(Core.Params, "-kt_mask "))
+	if (LPCSTR k = strstr(params, "-kt_mask "))
 	{
 		string_path name = "", file;
 		sscanf(k + 9, "%259[^ ]", name);
@@ -238,7 +262,7 @@ static void kt_chunk_setup()
 		if (g_kt_chunk.mask.empty()) Msg("! [kt chunk] cannot read the mask %s", file);
 		if (R) FS.r_close(R);
 	}
-	for (LPCSTR k = strstr(Core.Params, "-kt_ai_piece "); k; k = strstr(k + 1, "-kt_ai_piece "))
+	for (LPCSTR k = strstr(params, "-kt_ai_piece "); k; k = strstr(k + 1, "-kt_ai_piece "))
 	{
 		string_path piece = "";
 		if (1 != sscanf(k + 13, "%259[^ ]", piece)) continue;
