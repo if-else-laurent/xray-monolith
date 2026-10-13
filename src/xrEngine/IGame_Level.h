@@ -176,6 +176,17 @@ struct ENGINE_API KtChunk
 		const s16 y = land_y[u32(iz) * mask_nx + u32(ix)];
 		return y == -32768 ? flt_max : float(y) * .1f;
 	}
+	// The same file may go on with how far the ground of our own lies from the level's that was
+	// there (decimetres, 0 where it does not): a tree of a level standing on ground laid anew is
+	// moved up or down by that much, with its ground.
+	xr_vector<s16> land_shift;
+	float land_shift_at(float x, float z) const
+	{
+		if (land_shift.empty()) return 0.f;
+		int ix = iFloor((x - mask_x0) / mask_cell), iz = iFloor((z - mask_z0) / mask_cell);
+		if (ix < 0 || iz < 0 || ix >= int(mask_nx) || iz >= int(mask_nz)) return 0.f;
+		return float(land_shift[u32(iz) * mask_nx + u32(ix)]) * .1f;
+	}
 	// Whose grass grows on nobody's land: the owners from 120 up name a level - 120 the base one,
 	// 121.. the attached ones as the mask numbers them; 126 and the like - nobody's, none.
 	enum { grass_owner_base = 120 };

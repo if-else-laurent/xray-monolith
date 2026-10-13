@@ -283,6 +283,11 @@ static void kt_chunk_setup()
 		{
 			g_kt_chunk.land_y.resize(size);
 			R->r(&g_kt_chunk.land_y[0], size * 2);
+			if (u32(R->elapsed()) >= size * 2)
+			{
+				g_kt_chunk.land_shift.resize(size);
+				R->r(&g_kt_chunk.land_shift[0], size * 2);
+			}
 			Msg("* [kt chunk] land: the heights of the ground of our own are read, %s", name);
 		}
 		else
