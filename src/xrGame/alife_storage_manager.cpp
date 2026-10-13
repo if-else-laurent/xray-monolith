@@ -27,6 +27,8 @@
 #include "level_graph.h"
 #include "game_level_cross_table.h"
 #include "../xrEngine/IGame_Level.h"
+#include "xrServer_Objects_ALife.h"
+#include "xrServer_Objects_ALife_Items.h"
 //Alundaio
 #ifdef ENGINE_LUA_ALIFE_STORAGE_MANAGER_CALLBACKS
 #include "pch_script.h"
@@ -174,6 +176,43 @@ void CALifeStorageManager::load(void* buffer, const u32& buffer_size, LPCSTR fil
 	Level().autosave_manager().on_game_loaded();
 }
 
+// The physical state an object is saved with - where the bones of a box, a barrel, a thing on the
+// ground lay - is kept beside its place and in the same coordinates, so it moves with the place.
+// Until this was done the state stayed in the world's coordinates of the day of the save: after
+// Marsh was put 156 m further south its boxes hung in the air where they used to stand. Such a
+// state, found far from the object's place after loading, is dropped: the object stands where
+// the server has it.
+static void kt_move_state(CSE_ALifeDynamicObject* object, const Fvector& shift, bool to_world)
+{
+	const float far_sqr = 50.f * 50.f;
+	if (CSE_PHSkeleton* skeleton = smart_cast<CSE_PHSkeleton*>(object))
+	{
+		PHNETSTATE_VECTOR& bones = skeleton->saved_bones.bones;
+		for (u32 i = 0; i < bones.size(); i++)
+		{
+			bones[i].position.add(shift);
+			bones[i].previous_position.add(shift);
+		}
+		skeleton->saved_bones.m_min.add(shift);
+		skeleton->saved_bones.m_max.add(shift);
+		if (to_world && !bones.empty() && bones[0].position.distance_to_sqr(object->o_Position) > far_sqr)
+		{
+			bones.clear();
+			skeleton->_flags.set(CSE_PHSkeleton::flSavedData, FALSE);
+		}
+	}
+	SPHNetState* state = 0;
+	if (CSE_ALifeInventoryItem* item = smart_cast<CSE_ALifeInventoryItem*>(object)) state = &item->State;
+	else if (CSE_ALifeObjectPhysic* thing = smart_cast<CSE_ALifeObjectPhysic*>(object)) state = &thing->State;
+	if (state)
+	{
+		state->position.add(shift);
+		state->previous_position.add(shift);
+		if (to_world && state->position.distance_to_sqr(object->o_Position) > far_sqr)
+			state->position = state->previous_position = object->o_Position;
+	}
+}
+
 void CALifeStorageManager::kt_move_objects(bool to_world)
 {
 	if (!ai().get_game_graph() || !ai().game_graph().kt_placed() || !ai().get_level_graph()) return;
@@ -205,6 +244,7 @@ void CALifeStorageManager::kt_move_objects(bool to_world)
 		if (to_world)
 		{
 			object->o_Position.add(offset);
+			kt_move_state(object, offset, true);
 			u32 node = level_graph.kt_node(u32(chunk), object->m_tNodeID);
 			if (node == u32(-1) && level_graph.valid_vertex_position(object->o_Position))
 				node = level_graph.vertex_id(object->o_Position);
@@ -214,6 +254,9 @@ void CALifeStorageManager::kt_move_objects(bool to_world)
 		else
 		{
 			object->o_Position.sub(offset);
+			Fvector back;
+			back.invert(offset);
+			kt_move_state(object, back, false);
 			u32 from, local;
 			if (level_graph.kt_local(object->m_tNodeID, from, local) && int(from) == chunk)
 				object->m_tNodeID = local;
