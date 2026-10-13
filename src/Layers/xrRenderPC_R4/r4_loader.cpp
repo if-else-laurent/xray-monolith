@@ -238,6 +238,10 @@ void CRender::level_Unload()
 }
 
 // kt: vertex data kept while one geometry file is read, see the cut boxes
+// kt: the index ranges (buffer of the piece being read, base) of the visuals left without a triangle
+xr_vector<std::pair<u32, u32> > kt_all_cut;
+u32 kt_all_cut_hidden = 0;
+
 struct kt_kept_vb
 {
 	BYTE* data;
@@ -386,6 +390,8 @@ void CRender::LoadBuffers(CStreamReader* base_fs, BOOL _alternative)
 					dropped++;
 				}
 				kt_cut_total += dropped;
+				// a visual whose every triangle went is not to be drawn at all: empty, it still cost a draw
+				if (!_alternative && R.icount >= 3 && dropped * 3 == R.icount) kt_all_cut.push_back(std::make_pair(R.ib, R.ibase));
 			}
 			dx10BufferUtils::CreateIndexBuffer(&_IB[i], pData, iCount * 2);
 			xr_free(pData);
@@ -396,7 +402,7 @@ void CRender::LoadBuffers(CStreamReader* base_fs, BOOL _alternative)
 	}
 	for (u32 n = 0; n < kt_kept.size(); n++) xr_free(kt_kept[n].data);
 	kt_kept.clear();
-	if (kt_cut_total) Msg("* [kt chunk] cut: %u triangles are not drawn (%s buffers)", kt_cut_total, _alternative ? "fast" : "main");
+	if (kt_cut_total) Msg("* [kt chunk] cut: %u triangles are not drawn (%s buffers); visuals left without a triangle so far: %u", kt_cut_total, _alternative ? "fast" : "main", u32(kt_all_cut.size()));
 	kt_cut_total = 0;
 }
 
@@ -444,6 +450,7 @@ void CRender::kt_LocalScan(IReader* fs)
 void CRender::kt_CutScan(IReader* fs)
 {
 	kt_cut_ranges.clear();
+	kt_all_cut.clear();
 	const bool masked = g_kt_chunk.reading() < g_kt_chunk.mask_pieces && !g_kt_chunk.mask.empty();
 	if ((g_kt_chunk.cuts.empty() && !masked) || !fs) return;
 	IReader* V = 0;

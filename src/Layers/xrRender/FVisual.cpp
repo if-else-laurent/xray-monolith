@@ -64,6 +64,18 @@ void Fvisual::Load(const char* N, IReader* data, u32 dwFlags)
 		iBase = data->r_u32();
 		iCount = data->r_u32();
 		dwPrimitives = iCount / 3;
+#if defined(USE_DX11) || defined(USE_DX10)
+		{
+			// seamless world experiment (kt): every triangle of it went by the mask or a cut - not drawn
+			extern xr_vector<std::pair<u32, u32> > kt_all_cut;
+			for (u32 k = 0; k < kt_all_cut.size(); k++)
+				if (kt_all_cut[k].first == ID && kt_all_cut[k].second == iBase)
+				{
+					kt_hidden = true;
+					break;
+				}
+		}
+#endif
 
 		VERIFY(NULL==p_rm_Indices);
 		p_rm_Indices = RImplementation.getIB(ID);
