@@ -100,7 +100,8 @@ void CHOM::Load()
 		HOM_poly P;
 		S->r(&P, sizeof(P));
 		// seamless world experiment (kt): an occluder over the land given to a neighbour hides nothing there
-		if (g_kt_chunk.active && g_kt_chunk.cut(0, P.v1, P.v2, P.v3, true))
+		// ...and one that closed a place the level was never seen from (the tunnel behind its blind end) hides the way on
+		if (g_kt_chunk.active && (g_kt_chunk.cut(0, P.v1, P.v2, P.v3, true) || g_kt_chunk.hom_cut(P.v1, P.v2, P.v3)))
 		{
 			kt_dropped++;
 			continue;
@@ -108,7 +109,7 @@ void CHOM::Load()
 		CL.add_face_packed_D(P.v1, P.v2, P.v3, P.flags, 0.01f);
 	}
 
-	if (kt_dropped) Msg("* [kt chunk] occluders: %u triangles over the neighbours' land are dropped", kt_dropped);
+	if (kt_dropped) Msg("* [kt chunk] occluders: %u triangles over the neighbours' land or in the seams' boxes are dropped", kt_dropped);
 
 	// Determine adjacency
 	xr_vector<u32> adjacency;

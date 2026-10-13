@@ -85,6 +85,14 @@ struct ENGINE_API KtChunk
 	// with all three corners inside one is dropped from collisions and is not drawn: a doorway through
 	// a wall that used to close the level.
 	xr_vector<Fbox> cuts;
+	// occluders wholly inside these boxes are dropped: a place the level was never seen from, now walked through
+	xr_vector<Fbox> hom_cuts;
+	bool hom_cut(const Fvector& a, const Fvector& b, const Fvector& c) const
+	{
+		for (u32 i = 0; i < hom_cuts.size(); i++)
+			if (hom_cuts[i].contains(a) && hom_cuts[i].contains(b) && hom_cuts[i].contains(c)) return true;
+		return false;
+	}
 	// -kt_open <x0>,<y0>,<z0>,<x1>,<y1>,<z1>, any number, and -kt_fake <material id>: a collision
 	// triangle of that material (materials\fake, the walls only the actor runs into) wholly inside
 	// such a box is dropped. A level stops the actor with them short of where its AI map ends; at a

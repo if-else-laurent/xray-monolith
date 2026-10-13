@@ -120,6 +120,20 @@ static void kt_chunk_setup()
 		g_kt_chunk.cuts.push_back(box);
 		Msg("* [kt chunk] cut: %.2f, %.2f, %.2f - %.2f, %.2f, %.2f", box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z);
 	}
+	for (LPCSTR k = strstr(Core.Params, "-kt_hom_cut "); k; k = strstr(k + 1, "-kt_hom_cut "))
+	{
+		Fvector a, b;
+		if (6 != sscanf(k + 12, "%f,%f,%f,%f,%f,%f", &a.x, &a.y, &a.z, &b.x, &b.y, &b.z))
+		{
+			Msg("! [kt chunk] cannot read the key, expected -kt_hom_cut <x0>,<y0>,<z0>,<x1>,<y1>,<z1>");
+			continue;
+		}
+		Fbox box;
+		box.invalidate();
+		box.modify(a);
+		box.modify(b);
+		g_kt_chunk.hom_cuts.push_back(box);
+	}
 	for (LPCSTR k = strstr(Core.Params, "-kt_open "); k; k = strstr(k + 1, "-kt_open "))
 	{
 		Fvector a, b;
