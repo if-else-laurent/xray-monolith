@@ -6,6 +6,7 @@
 #include "../Include/xrRender/Kinematics.h"
 #include "script_callback_ex.h"
 #include "Level.h"
+#include "../xrEngine/IGame_Level.h"
 #include "PHCommander.h"
 #include "PHScriptCall.h"
 #include "CustomRocket.h"
@@ -491,12 +492,21 @@ CPhysicsShellHolder::PHLoadState(IReader& P)
 
 	VERIFY(!min.similar(max));
 
+	// Seamless world experiment (kt): a thing on the ground keeps this state in its own piece of
+	// the save, in the world's coordinates of the day it was saved, and the server cannot move it
+	// with the thing's place as it does the rest. When a level has been put elsewhere since, the
+	// state lies far from where the thing was spawned: it is read and left unused, the thing
+	// stays where the server has it. (After Marsh went 156 m south five things hung in the air.)
+	Fvector kt_middle;
+	kt_middle.add(min, max).mul(.5f);
+	const bool kt_stale = g_kt_chunk.active && kt_middle.distance_to_sqr(Position()) > 50.f * 50.f;
+
 	u16 bones_number = P.r_u16();
 	for (u16 i = 0; i < bones_number; i++)
 	{
 		SPHNetState state;
 		state.net_Load(P, min, max);
-		PHGetSyncItem(i)->set_State(state);
+		if (!kt_stale) PHGetSyncItem(i)->set_State(state);
 	}
 }
 
