@@ -382,6 +382,60 @@ void CGameGraph::kt_cross_cells(const CLevelGraph& level_graph, xr_vector<CGameL
 		Msg("* [kt world] %s: %u of %u nodes got their own vertices of the world graph, %u point elsewhere",
 		    g_kt_chunk.pieces[chunk].name, taken, theirs.header().level_vertex_count(), strangers);
 	}
+
+	// The nodes of the small pieces of our own (a seam's corridor, the land by the Clear Sky base):
+	// the cell of the nearest node of a level, counted in steps over the pieces - the base level's
+	// or an attached one's, whose cells are known by now. Before, they kept the cell of the base
+	// level's node the walk first reached them from: the land west of the Clear Sky base on Marsh
+	// said "Cordon", its nodes pointing to a vertex of Cordon's (2026-10-14).
+	const u32 total = level_graph.header().vertex_count();
+	xr_vector<u8> ours(extra, 0);
+	for (u32 node = own; node < total; node++)
+	{
+		u32 chunk, local;
+		if (!level_graph.kt_local(node, chunk, local)) ours[node - own] = 1;
+	}
+	xr_vector<u32> front, next;
+	u32 moved = 0, from_base = 0, from_chunk = 0, unreached = 0;
+	for (u32 node = 0; node < total; node++)
+	{
+		if (node >= own && ours[node - own]) continue;
+		const CLevelGraph::CVertex* V = level_graph.vertex(node);
+		for (int k = 0; k < 4; k++)
+		{
+			const u32 to = V->link(k);
+			if (!level_graph.valid_vertex_id(to) || to < own || ours[to - own] != 1) continue;
+			ours[to - own] = 2; // reached
+			cells[to - own] = node < own ? cross_table().vertex(node) : cells[node - own];
+			(node < own ? from_base : from_chunk)++;
+			front.push_back(to);
+		}
+	}
+	while (!front.empty())
+	{
+		next.clear();
+		for (u32 n = 0; n < front.size(); n++)
+		{
+			const CLevelGraph::CVertex* V = level_graph.vertex(front[n]);
+			for (int k = 0; k < 4; k++)
+			{
+				const u32 to = V->link(k);
+				if (!level_graph.valid_vertex_id(to) || to < own || ours[to - own] != 1) continue;
+				ours[to - own] = 2;
+				cells[to - own] = cells[front[n] - own];
+				next.push_back(to);
+			}
+		}
+		front.swap(next);
+	}
+	for (u32 i = 0; i < extra; i++)
+	{
+		if (ours[i] == 1) unreached++;
+		else if (ours[i] == 2 && cells[i].game_vertex_id() != cross_table().vertex(like[i]).game_vertex_id()) moved++;
+	}
+	Msg("* [kt world] nodes of our own pieces: the vertex of the nearest level's node, %u now point elsewhere than before; "
+	    "entered from the base level at %u, from attached ones at %u; %u reached from no level",
+	    moved, from_base, from_chunk, unreached);
 }
 
 void CAI_Space::unload(bool reload)
