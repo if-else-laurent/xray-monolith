@@ -250,6 +250,21 @@ void CSE_ALifeOnlineOfflineGroup::try_switch_offline()
 	if (m_members.empty())
 		return;
 
+	// Seamless world experiment (kt): an online squad with a member offline. switch_online brings the
+	// members online only when the squad itself comes online; a squad held online by the scripts (a
+	// companion) loaded from a save made with its member beyond the online distance stayed online
+	// with the member offline - no object in the game, never walked by the squad's offline brain
+	// either: the escort ecologist south of Cordon stood for good (2026-10-14).
+	if (g_kt_chunk.active && m_bOnline)
+		for (MEMBERS::iterator I = m_members.begin(); I != m_members.end(); ++I)
+		{
+			CSE_ALifeDynamicObject* member = (*I).second;
+			if (member->m_bOnline || kt_land_absent(member))
+				continue;
+			Msg("* [kt alife] %s: member %s of the online squad is offline, brought online", name_replace(), member->name_replace());
+			alife().add_online(member, false);
+		}
+
 	if (kt_land_absent(this))
 	{
 		alife().switch_offline(this);
