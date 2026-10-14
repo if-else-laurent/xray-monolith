@@ -30,6 +30,20 @@ FTreeVisual::FTreeVisual(void)
 {
 }
 
+// Seamless world experiment (kt): -kt_tree_probe <x>,<z> logs how the tree parts standing within 5 m
+// of the place were loaded - a tool to find why one is not drawn.
+static bool kt_tree_probe(const Fvector& at)
+{
+	static int asked = -1;
+	static float px = 0, pz = 0;
+	if (asked < 0)
+	{
+		LPCSTR k = strstr(Core.Params, "-kt_tree_probe ");
+		asked = k && 2 == sscanf(k + 15, "%f,%f", &px, &pz) ? 1 : 0;
+	}
+	return asked == 1 && _sqr(at.x - px) + _sqr(at.z - pz) < 25.f;
+}
+
 FTreeVisual::~FTreeVisual(void)
 {
 }
@@ -90,6 +104,10 @@ void FTreeVisual::Load(const char* N, IReader* data, u32 dwFlags)
 				vis.sphere.P.y += kt_shift;
 			}
 		}
+		if (kt_tree_probe(xform.c))
+			Msg("* [kt tree probe] %s: place %.2f %.2f %.2f, hidden %d, chunk loading %d (piece %u), vbase %u vcount %u ibase %u icount %u, box %.1f %.1f %.1f - %.1f %.1f %.1f",
+			    N, xform.c.x, xform.c.y, xform.c.z, int(kt_hidden), int(g_kt_chunk.loading), g_kt_chunk.active ? g_kt_chunk.reading() : 0u,
+			    vBase, vCount, iBase, iCount, vis.box.min.x, vis.box.min.y, vis.box.min.z, vis.box.max.x, vis.box.max.y, vis.box.max.z);
 		data->r(&c_scale, sizeof(c_scale));
 		c_scale.rgb.mul(.5f);
 		c_scale.hemi *= .5f;
@@ -346,6 +364,10 @@ void FTreeVisual_PM::Load(const char* N, IReader* data, u32 dwFlags)
 	{
 		u32 ID = data->r_u32();
 		pSWI = RImplementation.getSWI(ID);
+		if (kt_tree_probe(xform.c))
+			Msg("* [kt tree probe] %s: progressive, slide windows #%u: %u of them, the first: offset %u, %u triangles, %u vertices",
+			    N, ID, pSWI ? pSWI->count : 0u, pSWI && pSWI->count ? pSWI->sw[0].offset : 0u,
+			    pSWI && pSWI->count ? u32(pSWI->sw[0].num_tris) : 0u, pSWI && pSWI->count ? u32(pSWI->sw[0].num_verts) : 0u);
 	}
 }
 
