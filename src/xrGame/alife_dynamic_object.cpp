@@ -8,6 +8,7 @@
 
 #include "stdafx.h"
 #include "xrServer_Objects_ALife.h"
+#include "xrServer_Objects_ALife_Monsters.h"
 #include "alife_simulator.h"
 #include "alife_schedule_registry.h"
 #include "alife_graph_registry.h"
@@ -216,6 +217,16 @@ void CSE_ALifeDynamicObject::try_switch_online()
 
 void CSE_ALifeDynamicObject::try_switch_offline()
 {
+	// seamless world experiment (kt): a member of a squad that is online does not go offline on its
+	// own - the squad switches its members. The escort ecologist's squad, held online by the scripts,
+	// had its member taken offline by the distance alone, over and over (2026-10-14).
+	if (g_kt_chunk.active)
+		if (CSE_ALifeMonsterAbstract* monster = smart_cast<CSE_ALifeMonsterAbstract*>(this))
+			if (monster->m_group_id != 0xffff)
+				if (CSE_ALifeOnlineOfflineGroup* squad = smart_cast<CSE_ALifeOnlineOfflineGroup*>(ai().alife().objects().object(monster->m_group_id, true)))
+					if (squad->m_bOnline)
+						return;
+
 	if (kt_land_absent(this))
 	{
 		alife().switch_offline(this);
