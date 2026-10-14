@@ -51,6 +51,7 @@ class FTreeVisual_PM : public FTreeVisual
 private:
 	FSlideWindowItem* pSWI;
 	u32 last_lod;
+	u32 kt_probe_left; // -kt_tree_probe: how many more draws of this part to log
 public:
 	FTreeVisual_PM(void);
 	virtual ~FTreeVisual_PM(void);

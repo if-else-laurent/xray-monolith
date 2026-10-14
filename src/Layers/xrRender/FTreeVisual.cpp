@@ -346,6 +346,7 @@ FTreeVisual_PM::FTreeVisual_PM(void)
 {
 	pSWI = 0;
 	last_lod = 0;
+	kt_probe_left = 0;
 }
 
 FTreeVisual_PM::~FTreeVisual_PM(void)
@@ -364,7 +365,8 @@ void FTreeVisual_PM::Load(const char* N, IReader* data, u32 dwFlags)
 	{
 		u32 ID = data->r_u32();
 		pSWI = RImplementation.getSWI(ID);
-		if (kt_tree_probe(xform.c))
+		kt_probe_left = kt_tree_probe(xform.c) ? 6 : 0;
+		if (kt_probe_left)
 			Msg("* [kt tree probe] %s: progressive, slide windows #%u: %u of them, the first: offset %u, %u triangles, %u vertices",
 			    N, ID, pSWI ? pSWI->count : 0u, pSWI && pSWI->count ? pSWI->sw[0].offset : 0u,
 			    pSWI && pSWI->count ? u32(pSWI->sw[0].num_tris) : 0u, pSWI && pSWI->count ? u32(pSWI->sw[0].num_verts) : 0u);
@@ -382,6 +384,12 @@ void FTreeVisual_PM::Render(float LOD)
 	}
 	VERIFY(lod_id>=0 && lod_id<int(pSWI->count));
 	FSlideWindow& SW = pSWI->sw[lod_id];
+	if (kt_probe_left)
+	{
+		kt_probe_left--;
+		Msg("* [kt tree probe] draw: LOD %.3f -> window %d of %u: offset %u, %u triangles, %u vertices; vBase %u iBase %u",
+		    LOD, lod_id, pSWI->count, SW.offset, u32(SW.num_tris), u32(SW.num_verts), vBase, iBase);
+	}
 	RCache.set_Geometry(rm_geom);
 	RCache.Render(D3DPT_TRIANGLELIST, vBase, 0, SW.num_verts, iBase + SW.offset, SW.num_tris);
 	RCache.stat.r.s_flora.add(SW.num_verts);
@@ -392,4 +400,5 @@ void FTreeVisual_PM::Copy(dxRender_Visual* pSrc)
 	inherited::Copy(pSrc);
 	FTreeVisual_PM* pFrom = fast_dynamic_cast<FTreeVisual_PM*>(pSrc);
 	PCOPY(pSWI);
+	PCOPY(kt_probe_left);
 }
