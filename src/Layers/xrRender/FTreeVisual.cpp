@@ -384,11 +384,12 @@ void FTreeVisual_PM::Render(float LOD)
 	}
 	VERIFY(lod_id>=0 && lod_id<int(pSWI->count));
 	FSlideWindow& SW = pSWI->sw[lod_id];
-	if (kt_probe_left)
+	if (kt_probe_left && Device.vCameraPosition.distance_to(xform.c) < 40.f)
 	{
 		kt_probe_left--;
-		Msg("* [kt tree probe] draw: LOD %.3f -> window %d of %u: offset %u, %u triangles, %u vertices; vBase %u iBase %u",
-		    LOD, lod_id, pSWI->count, SW.offset, u32(SW.num_tris), u32(SW.num_verts), vBase, iBase);
+		Msg("* [kt tree probe] draw from %.0f m: LOD %.3f -> window %d of %u: offset %u, %u triangles, %u vertices; vBase %u iBase %u; sphere %.1f %.1f %.1f r %.1f",
+		    Device.vCameraPosition.distance_to(xform.c), LOD, lod_id, pSWI->count, SW.offset, u32(SW.num_tris), u32(SW.num_verts), vBase, iBase,
+		    vis.sphere.P.x, vis.sphere.P.y, vis.sphere.P.z, vis.sphere.R);
 	}
 	RCache.set_Geometry(rm_geom);
 	RCache.Render(D3DPT_TRIANGLELIST, vBase, 0, SW.num_verts, iBase + SW.offset, SW.num_tris);
