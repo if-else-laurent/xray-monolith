@@ -467,9 +467,14 @@ void CRender::kt_CutScan(IReader* fs)
 				box.min.add(g_kt_chunk.offset);
 				box.max.add(g_kt_chunk.offset);
 			}
-			// under a mask every piece of plain geometry is looked through; trees are hidden whole
-			bool touched = masked && H.type != MT_TREE_ST && H.type != MT_TREE_PM;
-			for (u32 c = 0; c < g_kt_chunk.cuts.size(); c++)
+			// under a mask every piece of plain geometry is looked through; trees are hidden whole and
+			// never cut: their vertices are the model's own, and one model's geometry is shared by all
+			// its trees - a tree whose box touched a cut box had the triangles cut by its model's
+			// coordinates, in every tree of the model (Marsh's leaning dead trees lost their trunks
+			// all over the level, their broken tops hung in the air; 2026-10-14)
+			const bool tree = H.type == MT_TREE_ST || H.type == MT_TREE_PM;
+			bool touched = masked && !tree;
+			for (u32 c = 0; c < g_kt_chunk.cuts.size() && !tree; c++)
 				if (box.intersect(g_kt_chunk.cuts[c])) touched = true;
 			if (touched)
 			{
