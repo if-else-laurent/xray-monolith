@@ -300,6 +300,22 @@ void CGameGraph::kt_place(const CLevelGraph& level_graph)
 		m_nodes[i].tNodeID = node;
 		moved++;
 	}
+	// -kt_graph_at: the ends of a seam's way of our own stand where the sleeve is
+	for (u32 n = 0; n < g_kt_chunk.graph_ats.size(); n++)
+	{
+		const KtChunk::GraphAt& A = g_kt_chunk.graph_ats[n];
+		if (A.vertex >= header().vertex_count()) continue;
+		const u32 node = level_graph.valid_vertex_position(A.point) ? level_graph.vertex_id(A.point) : u32(-1);
+		if (!level_graph.valid_vertex_id(node))
+		{
+			Msg("! [kt world] the world graph: vertex %u is not put at %.1f, %.1f, %.1f: no node there", A.vertex, VPUSH(A.point));
+			continue;
+		}
+		Msg("* [kt world] the world graph: vertex %u is put at %.1f, %.1f, %.1f (it was at %.1f, %.1f, %.1f), node %u", A.vertex,
+		    VPUSH(A.point), VPUSH(m_nodes[A.vertex].tLocalPoint), node);
+		m_nodes[A.vertex].tLocalPoint = A.point;
+		m_nodes[A.vertex].tNodeID = node;
+	}
 	// The points of the vertices where those who die offline are put (death points): each has a
 	// place and a node in its level's own numbers too. They lie after the edges, in our copy.
 	u32 points = 0, points_lost = 0;

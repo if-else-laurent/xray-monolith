@@ -101,6 +101,11 @@ struct ENGINE_API KtChunk
 			if ((graph_ways[i].a == a && graph_ways[i].b == b) || (graph_ways[i].a == b && graph_ways[i].b == a)) return graph_ways[i].length;
 		return 0.f;
 	}
+	// -kt_graph_at <vertex>,<x>,<y>,<z>, any number: a vertex of the world graph is put at this point of
+	// the world (and gets the node there). The ends of a seam's way of our own: where the levels' old
+	// passage was there is scenery now, and a squad that came to the vertex online stood there.
+	struct GraphAt { u32 vertex; Fvector point; };
+	xr_vector<GraphAt> graph_ats;
 	xr_vector<Fbox> hom_cuts;
 	bool hom_cut(const Fvector& a, const Fvector& b, const Fvector& c) const
 	{
