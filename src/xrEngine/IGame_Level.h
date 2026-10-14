@@ -83,8 +83,11 @@ struct ENGINE_API KtChunk
 	xr_vector<void*> sectors; // CSector* of the chunk, drawn whenever they are in view
 	// -kt_cut <x0>,<y0>,<z0>,<x1>,<y1>,<z1>, any number of them: boxes in the world. A static triangle
 	// with all three corners inside one is dropped from collisions and is not drawn: a doorway through
-	// a wall that used to close the level.
+	// a wall that used to close the level. A seventh number 1 keeps the level's ground (flat, of a
+	// ground material, or the terrain's picture) inside the box: a box square to the world's axes over
+	// a fence that runs askew took the ground under it and the sky showed through.
 	xr_vector<Fbox> cuts;
+	xr_vector<u8> cut_keeps_ground;
 	// occluders wholly inside these boxes are dropped: a place the level was never seen from, now walked through
 	// -kt_graph_seams <level>[,<level>...]: between the base level and these the world graph keeps
 	// only the edges whose ends meet in the world (the seams). The game's other passages between
@@ -296,7 +299,8 @@ struct ENGINE_API KtChunk
 		const bool ours = piece > 0 && piece - 1 < pieces.size() && 0 == strncmp(pieces[piece - 1].name, "kt_", 3);
 		if (!ours)
 			for (u32 i = 0; i < cuts.size(); i++)
-				if (cuts[i].contains(a) && cuts[i].contains(b) && cuts[i].contains(c)) return true;
+				if (cuts[i].contains(a) && cuts[i].contains(b) && cuts[i].contains(c) && !(is_ground && i < cut_keeps_ground.size() && cut_keeps_ground[i]))
+					return true;
 		if (mask.empty() || piece >= mask_pieces) return false;
 		const float mx = (a.x + b.x + c.x) / 3, mz = (a.z + b.z + c.z) / 3;
 		if (foreign(piece, mx, mz)) return true;

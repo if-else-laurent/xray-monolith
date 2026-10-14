@@ -132,9 +132,11 @@ static void kt_chunk_setup()
 	for (LPCSTR k = strstr(params, "-kt_cut "); k; k = strstr(k + 1, "-kt_cut "))
 	{
 		Fvector a, b;
-		if (6 != sscanf(k + 8, "%f,%f,%f,%f,%f,%f", &a.x, &a.y, &a.z, &b.x, &b.y, &b.z))
+		int keep_ground = 0;
+		const int read = sscanf(k + 8, "%f,%f,%f,%f,%f,%f,%d", &a.x, &a.y, &a.z, &b.x, &b.y, &b.z, &keep_ground);
+		if (read < 6)
 		{
-			Msg("! [kt chunk] cannot read the key, expected -kt_cut <x0>,<y0>,<z0>,<x1>,<y1>,<z1>");
+			Msg("! [kt chunk] cannot read the key, expected -kt_cut <x0>,<y0>,<z0>,<x1>,<y1>,<z1>[,<keep ground>]");
 			continue;
 		}
 		Fbox box;
@@ -142,7 +144,9 @@ static void kt_chunk_setup()
 		box.modify(a);
 		box.modify(b);
 		g_kt_chunk.cuts.push_back(box);
-		Msg("* [kt chunk] cut: %.2f, %.2f, %.2f - %.2f, %.2f, %.2f", box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z);
+		g_kt_chunk.cut_keeps_ground.push_back(u8(read == 7 && keep_ground ? 1 : 0));
+		Msg("* [kt chunk] cut: %.2f, %.2f, %.2f - %.2f, %.2f, %.2f%s", box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z,
+		    read == 7 && keep_ground ? ", the ground kept" : "");
 	}
 	for (LPCSTR k = strstr(params, "-kt_graph_way "); k; k = strstr(k + 1, "-kt_graph_way "))
 	{
