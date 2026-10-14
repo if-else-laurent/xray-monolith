@@ -178,7 +178,14 @@ void CPatrolPathStorage::kt_place(const CGameGraph& game_graph, const CLevelGrap
 			u32 node = level_graph.kt_node(u32(chunk), point.kt_level_vertex_id());
 			if (!level_graph.valid_vertex_id(node) && level_graph.valid_vertex_position(position))
 				node = level_graph.vertex_id(position);
-			if (!level_graph.valid_vertex_id(node)) lost++;
+			if (!level_graph.valid_vertex_id(node))
+			{
+				// the first few are named: which paths of which level lost their nodes, and where they are
+				if (lost < 80)
+					Msg("~ [kt world] patrol point without a node: %s #%u of %s at %.1f, %.1f, %.1f (its node %u)", *(*I).first,
+					    (*P).first, g_kt_chunk.pieces[chunk].name, VPUSH(position), point.kt_level_vertex_id());
+				lost++;
+			}
 			point.kt_move(offset, node);
 			moved++;
 		}
