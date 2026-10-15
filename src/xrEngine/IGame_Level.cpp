@@ -153,6 +153,17 @@ static void kt_chunk_setup()
 		KtChunk::GraphWay W;
 		if (3 == sscanf(k + 14, "%u,%u,%f", &W.a, &W.b, &W.length)) g_kt_chunk.graph_ways.push_back(W);
 	}
+	for (LPCSTR k = strstr(params, "-kt_graph_edge "); k; k = strstr(k + 1, "-kt_graph_edge "))
+	{
+		KtChunk::GraphEdge G;
+		if (3 == sscanf(k + 15, "%u,%u,%f", &G.a, &G.b, &G.length)) g_kt_chunk.graph_edges.push_back(G);
+	}
+	for (LPCSTR k = strstr(params, "-kt_graph_drop "); k; k = strstr(k + 1, "-kt_graph_drop "))
+	{
+		KtChunk::GraphEdge G;
+		G.length = 0.f;
+		if (2 == sscanf(k + 15, "%u,%u", &G.a, &G.b)) g_kt_chunk.graph_drops.push_back(G);
+	}
 	for (LPCSTR k = strstr(params, "-kt_graph_at "); k; k = strstr(k + 1, "-kt_graph_at "))
 	{
 		KtChunk::GraphAt A;

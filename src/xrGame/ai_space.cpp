@@ -177,14 +177,70 @@ void CGameGraph::kt_claim()
 	}
 	if (base < 0) return;
 
-	// the file's memory is not ours to write into
+	// the file's memory is not ours to write into; room after it for the edges added (-kt_graph_edge):
+	// a vertex that gets one has its whole list written anew there
+#pragma pack(push,1)
+	struct kt_edge_rec { u16 vertex; float distance; };
+#pragma pack(pop)
+	const u32 count = header().vertex_count();
 	const u32 size = u32((u8*)m_cross_tables - (u8*)m_nodes);
+	u32 extra = 0;
+	for (u32 n = 0; n < g_kt_chunk.graph_edges.size(); n++)
+		for (int side = 0; side < 2; side++)
+		{
+			const u32 v = side ? g_kt_chunk.graph_edges[n].b : g_kt_chunk.graph_edges[n].a;
+			if (v < count) extra += (u32(m_nodes[v].tNeighbourCount) + 1) * sizeof(kt_edge_rec);
+		}
 	xr_free(m_kt_nodes);
-	m_kt_nodes = xr_alloc<u8>(size);
+	m_kt_nodes = xr_alloc<u8>(size + extra);
 	CopyMemory(m_kt_nodes, m_nodes, size);
 	m_nodes = (CVertex*)m_kt_nodes;
+	u32 tail = size;
+	for (u32 n = 0; n < g_kt_chunk.graph_drops.size(); n++)
+		for (int side = 0; side < 2; side++)
+		{
+			const u32 v = side ? g_kt_chunk.graph_drops[n].b : g_kt_chunk.graph_drops[n].a;
+			const u32 to = side ? g_kt_chunk.graph_drops[n].a : g_kt_chunk.graph_drops[n].b;
+			if (v >= count) continue;
+			CVertex& V = m_nodes[v];
+			kt_edge_rec* edges = (kt_edge_rec*)((u8*)m_nodes + V.dwEdgeOffset);
+			for (u32 e = 0; e < V.tNeighbourCount; e++)
+				if (edges[e].vertex == to)
+				{
+					edges[e] = edges[V.tNeighbourCount - 1];
+					V.tNeighbourCount--;
+					Msg("* [kt world] the world graph: edge %u -> %u is taken out (-kt_graph_drop)", v, to);
+					break;
+				}
+		}
+	for (u32 n = 0; n < g_kt_chunk.graph_edges.size(); n++)
+		for (int side = 0; side < 2; side++)
+		{
+			const KtChunk::GraphEdge& G = g_kt_chunk.graph_edges[n];
+			const u32 v = side ? G.b : G.a, to = side ? G.a : G.b;
+			if (v >= count || to >= count) continue;
+			CVertex& V = m_nodes[v];
+			kt_edge_rec* edges = (kt_edge_rec*)((u8*)m_nodes + V.dwEdgeOffset);
+			bool there = false;
+			for (u32 e = 0; e < V.tNeighbourCount; e++)
+				if (edges[e].vertex == to)
+				{
+					edges[e].distance = G.length;
+					there = true;
+				}
+			if (!there && V.tNeighbourCount < 255)
+			{
+				kt_edge_rec* moved = (kt_edge_rec*)(m_kt_nodes + tail);
+				for (u32 e = 0; e < V.tNeighbourCount; e++) moved[e] = edges[e];
+				moved[V.tNeighbourCount].vertex = u16(to);
+				moved[V.tNeighbourCount].distance = G.length;
+				V.dwEdgeOffset = tail;
+				V.tNeighbourCount++;
+				tail += u32(V.tNeighbourCount) * sizeof(kt_edge_rec);
+			}
+			Msg("* [kt world] the world graph: edge %u -> %u, %.1f m, %s (-kt_graph_edge)", v, to, G.length, there ? "its length set" : "added");
+		}
 
-	const u32 count = header().vertex_count();
 	m_kt_chunk.assign(count, s8(-1));
 	m_kt_node.resize(count);
 	m_kt_level.resize(count);

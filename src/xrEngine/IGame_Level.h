@@ -109,6 +109,14 @@ struct ENGINE_API KtChunk
 	// passage was there is scenery now, and a squad that came to the vertex online stood there.
 	struct GraphAt { u32 vertex; Fvector point; };
 	xr_vector<GraphAt> graph_ats;
+	// -kt_graph_edge <vertex>,<vertex>,<metres>, any number: an edge of the world graph added both ways
+	// (or its length set, when it is there). A vertex put elsewhere by -kt_graph_at keeps its old
+	// neighbours: the end of the south entrance's edge moved to the collector's opening was still
+	// joined only to the far end of Cordon's tunnel, and companions went there by the military base.
+	// -kt_graph_drop <vertex>,<vertex>, any number: an edge taken out both ways.
+	struct GraphEdge { u32 a, b; float length; };
+	xr_vector<GraphEdge> graph_edges;
+	xr_vector<GraphEdge> graph_drops;
 	xr_vector<Fbox> hom_cuts;
 	bool hom_cut(const Fvector& a, const Fvector& b, const Fvector& c) const
 	{
