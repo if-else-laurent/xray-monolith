@@ -180,6 +180,34 @@ void CPatrolPathStorage::kt_place(const CGameGraph& game_graph, const CLevelGrap
 				node = level_graph.vertex_id(position);
 			if (!level_graph.valid_vertex_id(node))
 			{
+				// No node under the point itself: the nearest one within 2 m. The Meadow's
+				// pol_smart_terrain_2_1_patrol_1_walk #7 stands on a house's upper floor just off its
+				// nodes (no node in the game's data either); no squad came to the Meadow in the game,
+				// with the edge Cordon - Meadow one took the job and the engine stopped on the point
+				// (CPatrolPathManager::select_point, 2026-10-17).
+				const float cell = level_graph.header().cell_size();
+				float best = 2.f * 2.f;
+				for (int i = -3; i <= 3; i++)
+					for (int j = -3; j <= 3; j++)
+					{
+						Fvector at = position;
+						at.x += i * cell;
+						at.z += j * cell;
+						if (!level_graph.valid_vertex_position(at))
+							continue;
+						const u32 near_node = level_graph.vertex_id(at);
+						if (!level_graph.valid_vertex_id(near_node))
+							continue;
+						const float d = level_graph.vertex_position(near_node).distance_to_sqr(position);
+						if (d < best)
+							best = d, node = near_node;
+					}
+				if (level_graph.valid_vertex_id(node))
+					Msg("~ [kt world] patrol point %s #%u of %s at %.1f, %.1f, %.1f has no node under it: the nearest, %.1f m off", *(*I).first,
+					    (*P).first, g_kt_chunk.pieces[chunk].name, VPUSH(position), _sqrt(best));
+			}
+			if (!level_graph.valid_vertex_id(node))
+			{
 				// the first few are named: which paths of which level lost their nodes, and where they are
 				if (lost < 80)
 					Msg("~ [kt world] patrol point without a node: %s #%u of %s at %.1f, %.1f, %.1f (its node %u)", *(*I).first,
