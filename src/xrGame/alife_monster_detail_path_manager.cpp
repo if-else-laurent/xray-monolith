@@ -262,6 +262,7 @@ void CALifeMonsterDetailPathManager::follow_path(const ALife::_TIME_ID& time_del
 		if (distance_between > (update_distance + m_walked_distance))
 		{
 			m_walked_distance += update_distance;
+			kt_walk_line((GameGraph::_GRAPH_ID)m_path[m_path.size() - 2], distance_between);
 #ifdef DEBUG
 			object().m_fDistanceFromPoint	= m_walked_distance;
 			object().m_fDistanceToPoint		= distance_between;
@@ -285,6 +286,48 @@ void CALifeMonsterDetailPathManager::follow_path(const ALife::_TIME_ID& time_del
 		object().on_location_change();
 		VERIFY(m_path.back() == object().get_object().m_tGraphID);
 	}
+}
+
+// Seamless world experiment (kt): offline, an object changes its place only at the vertices of the
+// world graph - it stays at the one it set out from until it reaches the next. Between levels the
+// vertices are tens of metres apart; the edge Cordon's rail tunnel - the Meadow is 555 m with none
+// on the way, and an offline companion "stood" in the tunnel for five minutes: the PDA showed it
+// there, and the actor coming back within the online radius of it brought it online there, its
+// walk lost (the user, 2026-10-16). On an edge whose line is known (-kt_graph_line) the object is
+// put on the line as far as it has walked, on the node there; where there is no node the place is
+// left as it was.
+void CALifeMonsterDetailPathManager::kt_walk_line(const GameGraph::_GRAPH_ID& next, const float& length)
+{
+	if (!g_kt_chunk.active || g_kt_chunk.graph_lines.empty() || length <= 0.f)
+		return;
+	CSE_ALifeDynamicObject& self = object().get_object();
+	bool reversed = false;
+	const KtChunk::GraphLine* line = g_kt_chunk.graph_line(self.m_tGraphID, next, reversed);
+	if (!line)
+		return;
+	float along = _min(_max(m_walked_distance / length, 0.f), 1.f) * line->length;
+	if (reversed)
+		along = line->length - along;
+	Fvector point = line->points.back();
+	for (u32 i = 1; i < line->points.size(); i++)
+	{
+		const float piece = line->points[i - 1].distance_to(line->points[i]);
+		if (along <= piece && piece > 0.f)
+		{
+			point.lerp(line->points[i - 1], line->points[i], along / piece);
+			break;
+		}
+		along -= piece;
+	}
+	const CLevelGraph& level_graph = ai().level_graph();
+	if (!level_graph.valid_vertex_position(point))
+		return;
+	const u32 node = level_graph.vertex_id(point);
+	if (!level_graph.valid_vertex_id(node))
+		return;
+	point.y = level_graph.vertex_plane_y(node, point.x, point.z);
+	self.o_Position = point;
+	self.m_tNodeID = node;
 }
 
 void CALifeMonsterDetailPathManager::on_switch_online()

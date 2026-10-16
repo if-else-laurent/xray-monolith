@@ -51,6 +51,7 @@ private:
 	void actualize();
 	void setup_current_speed();
 	void follow_path(const ALife::_TIME_ID& time_delta);
+	void kt_walk_line(const GameGraph::_GRAPH_ID& next, const float& length);
 	void update(const ALife::_TIME_ID& time_delta);
 
 public:

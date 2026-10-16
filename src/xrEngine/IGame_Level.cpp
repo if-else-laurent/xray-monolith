@@ -158,6 +158,25 @@ static void kt_chunk_setup()
 		KtChunk::GraphEdge G;
 		if (3 == sscanf(k + 15, "%u,%u,%f", &G.a, &G.b, &G.length)) g_kt_chunk.graph_edges.push_back(G);
 	}
+	for (LPCSTR k = strstr(params, "-kt_graph_line "); k; k = strstr(k + 1, "-kt_graph_line "))
+	{
+		KtChunk::GraphLine L;
+		int read = 0;
+		if (2 != sscanf(k + 15, "%u,%u%n", &L.a, &L.b, &read)) continue;
+		LPCSTR p = k + 15 + read;
+		L.length = 0.f;
+		for (Fvector v; *p == ','; )
+		{
+			int used = 0;
+			if (3 != sscanf(p, ",%f,%f,%f%n", &v.x, &v.y, &v.z, &used)) break;
+			p += used;
+			if (!L.points.empty()) L.length += L.points.back().distance_to(v);
+			L.points.push_back(v);
+		}
+		if (L.points.size() < 2) continue;
+		Msg("* [kt world] the world graph: edge %u - %u goes along a line of %u points, %.0f m", L.a, L.b, L.points.size(), L.length);
+		g_kt_chunk.graph_lines.push_back(L);
+	}
 	for (LPCSTR k = strstr(params, "-kt_graph_drop "); k; k = strstr(k + 1, "-kt_graph_drop "))
 	{
 		KtChunk::GraphEdge G;

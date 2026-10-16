@@ -117,6 +117,20 @@ struct ENGINE_API KtChunk
 	struct GraphEdge { u32 a, b; float length; };
 	xr_vector<GraphEdge> graph_edges;
 	xr_vector<GraphEdge> graph_drops;
+	// -kt_graph_line <vertex>,<vertex>,<x>,<y>,<z>,<x>,<y>,<z>...: the line an edge of the world graph
+	// goes along in the world, from the first vertex to the second. An offline squad walking such an
+	// edge is put on the line as far as it has walked, not left at the vertex it set out from.
+	struct GraphLine { u32 a, b; xr_vector<Fvector> points; float length; };
+	xr_vector<GraphLine> graph_lines;
+	const GraphLine* graph_line(u32 a, u32 b, bool& reversed) const
+	{
+		for (u32 i = 0; i < graph_lines.size(); i++)
+		{
+			if (graph_lines[i].a == a && graph_lines[i].b == b) { reversed = false; return &graph_lines[i]; }
+			if (graph_lines[i].a == b && graph_lines[i].b == a) { reversed = true; return &graph_lines[i]; }
+		}
+		return 0;
+	}
 	xr_vector<Fbox> hom_cuts;
 	bool hom_cut(const Fvector& a, const Fvector& b, const Fvector& c) const
 	{
