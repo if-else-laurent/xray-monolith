@@ -27,6 +27,7 @@
 
 // Lain: added 
 #include "steering_behaviour.h"
+#include "../xrEngine/IGame_Level.h"
 
 using namespace MovementManager;
 
@@ -63,6 +64,12 @@ void CMovementManager::Load(LPCSTR section)
 
 	m_base_game_selector = xr_new<CGameVertexParams>(locations().vertex_types());
 	m_base_level_selector = xr_new<CBaseParameters>();
+	// Seamless world experiment (kt): a path over the AI map stops after 65500 nodes visited; in the
+	// world a squad walking from Darkscape's rail tunnel to Cordon's, 1000 m along the Meadow's railway
+	// with its fields beside the bed, never found it and stood there (2026-10-17). The search's
+	// storage holds 512 K nodes (graph_engine.h).
+	if (g_kt_chunk.active)
+		m_base_level_selector->max_visited_node_count = 512 * 1024 - 1024;
 
 	m_game_location_selector = xr_new<CGameLocationSelector>(m_restricted_object, m_location_manager);
 	m_game_path_manager = xr_new<CGamePathManager>(m_restricted_object);

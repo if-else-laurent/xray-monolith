@@ -63,7 +63,10 @@ public:
 #ifdef AI_COMPILER
 	typedef CVertexAllocatorFixed<2*1024*1024>				CVertexAllocator;
 #else
-	typedef CVertexAllocatorFixed<64 * 1024> CVertexAllocator;
+	// Seamless world experiment (kt): 512 K, not 64 K - a stalker's path over the AI map of several
+	// levels joined is longer than the game ever asked for (CMovementManager::Load raises the limit
+	// of a search to it only in the world; elsewhere searches stop at 65500 as before).
+	typedef CVertexAllocatorFixed<512 * 1024> CVertexAllocator;
 	typedef CVertexAllocatorFixed<8 * 1024> CSolverVertexAllocator;
 	typedef CVertexAllocatorFixed<1024> CStringVertexAllocator;
 #endif // AI_COMPILER
