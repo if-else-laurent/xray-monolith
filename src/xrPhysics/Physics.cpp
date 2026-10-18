@@ -138,6 +138,11 @@ IC static int CollideIntoGroup(dGeomID o1, dGeomID o2, dJointGroupID jointGroup,
 		surface.bounce_vel = 1.5f; //0.005f;
 		usr_data_1 = retrieveGeomUserData(g1);
 		usr_data_2 = retrieveGeomUserData(g2);
+		// kt: in the first step after the static model was replaced a pair of bodies comes before the
+		// static collision of each (CPHObject::Collide: CollideDynamics, then CollideStatic), and
+		// below their remembered triangles were read in the freed model (soak, 2026-10-18)
+		kt_forget_static(usr_data_1);
+		kt_forget_static(usr_data_2);
 		///////////////////////////////////////////////////////////////////////////////////////////////////
 		if (usr_data_2) material_idx_2 = usr_data_2->material;
 		if (usr_data_1) material_idx_1 = usr_data_1->material;

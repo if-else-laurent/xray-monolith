@@ -150,6 +150,17 @@ IC dxGeomUserData* dGeomGetUserData(dxGeom* geom)
 	return (dxGeomUserData*)dGeomGetData(geom);
 }
 
+// Seamless world experiment (kt): the static model was replaced since this geom last met it, so the
+// triangles it remembers being pushed out of (neg_tri, b_neg_tri) lie in the freed model. The
+// generation itself is left as it is: dSortTriPrimitiveCollide also asks the model anew for the
+// cached triangles when it sees it.
+IC void kt_forget_static(dxGeomUserData* data)
+{
+	if (!data || data->kt_generation == g_kt_static_generation) return;
+	data->pushing_neg = data->pushing_b_neg = false;
+	data->neg_tri = data->b_neg_tri = 0;
+}
+
 //XRPHYSICS_API dxGeomUserData* PHGeomGetUserData( dxGeom* geom );
 
 
