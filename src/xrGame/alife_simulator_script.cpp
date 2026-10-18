@@ -182,6 +182,16 @@ CSE_ALifeDynamicObject* CALifeSimulator__create(CALifeSimulator* self, ALife::_S
 // numbers, and for a level standing next to the base one those are other numbers. Which frame a
 // triple is in can be told: a node of the vertex's own level, by the world's numbering, means the
 // world's frame. Otherwise the node is taken for the level's own and moved, with the place.
+// A piece of our own: a corridor's AI map (-kt_ai_piece) or a chunk no level of the world graph is.
+static bool kt_own_piece(const CGameGraph& graph, u8 piece)
+{
+	if (piece == u8(255)) return true;
+	if (piece == 0) return false; // the base level's
+	for (u32 v = 0, n = graph.header().vertex_count(); v < n; v++)
+		if (graph.kt_chunk(v) == int(piece) - 1) return false;
+	return true;
+}
+
 void kt_to_world(LPCSTR what, Fvector& position, u32& level_vertex_id, GameGraph::_GRAPH_ID game_vertex_id)
 {
 	if (!ai().get_game_graph() || !ai().get_level_graph()) return;
@@ -192,6 +202,12 @@ void kt_to_world(LPCSTR what, Fvector& position, u32& level_vertex_id, GameGraph
 	const CLevelGraph& nodes = ai().level_graph();
 	const bool valid = nodes.valid_vertex_id(level_vertex_id);
 	if (valid && nodes.kt_piece_of(level_vertex_id) == u8(chunk + 1)) return;
+	// a node of a piece of our own under the place given is the world's: no level numbers it. A squad
+	// put at the foot of our ramp to Darkscape (its vertex is Darkscape's) wrote "of no use" each time
+	// and was left as given, which was right
+	if (valid && kt_own_piece(graph, nodes.kt_piece_of(level_vertex_id)) &&
+	    position.distance_to_xz(nodes.vertex_position(level_vertex_id)) < 2.f)
+		return;
 	const u32 node = nodes.kt_node(u32(chunk), level_vertex_id);
 	if (node == u32(-1) || !nodes.valid_vertex_id(node))
 	{
