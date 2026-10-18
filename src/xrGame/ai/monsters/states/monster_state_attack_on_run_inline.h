@@ -216,25 +216,19 @@ bool is_valid_point_to_move(Fvector const& point, u32* out_vertex)
 	}
 
 	CLevelGraph::CPosition vertex_pos = ai().level_graph().vertex_position(point);
-	// kt: every sorted run of the node array, as in CLevelGraph::vertex_id: in the merged map the added
-	// nodes follow the level's own
-	CLevelGraph::CVertex *run_begin[2], *run_end[2];
-	const u32 runs = ai().level_graph().kt_runs(run_begin, run_end);
-	for (u32 r = 0; r < runs; ++r)
-	{
-		CLevelGraph::CVertex* E = run_end[r];
-		CLevelGraph::CVertex* I = std::lower_bound(run_begin[r], E, vertex_pos.xz());
+	CLevelGraph::CVertex* B = ai().level_graph().vertices();
+	CLevelGraph::CVertex* E = B + ai().level_graph().header().vertex_count();
+	CLevelGraph::CVertex* I = std::lower_bound(B, E, vertex_pos.xz());
 
-		for (; (I != E) && ((*I).position().xz() == vertex_pos.xz()); ++I)
+	for (; (I != E) && ((*I).position().xz() == vertex_pos.xz()); ++I)
+	{
+		if (abs(ai().level_graph().vertex_plane_y(*I) - point.y) < 4.f)
 		{
-			if (abs(ai().level_graph().vertex_plane_y(*I) - point.y) < 4.f)
+			if (out_vertex)
 			{
-				if (out_vertex)
-				{
-					*out_vertex = ai().level_graph().vertex_id(I);
-				}
-				return true;
+				*out_vertex = ai().level_graph().vertex_id(I);
 			}
+			return true;
 		}
 	}
 

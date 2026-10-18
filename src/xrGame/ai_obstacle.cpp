@@ -242,11 +242,8 @@ void ai_obstacle::compute_impl()
 	level_graph.unpack_xz(max_vertex_position, x_max, z_max);
 
 	u32 row_length = level_graph.row_length();
-	// kt: the nodes of a cell are looked for in every sorted run of the array, as in vertex_id: in the
-	// merged map the added nodes follow the level's own, and one search over both found a neighbour's
-	// cell by chance only
-	CLevelGraph::CVertex *run_begin[2], *run_end[2];
-	const u32 runs = level_graph.kt_runs(run_begin, run_end);
+	const_iterator B = level_graph.begin();
+	const_iterator E = level_graph.end();
 
 	m_area.clear();
 	merge_predicate predicate(this, m_area);
@@ -255,16 +252,18 @@ void ai_obstacle::compute_impl()
 		for (u32 z = z_min; z <= z_max; ++z)
 		{
 			u32 xz = x * row_length + z;
-			for (u32 r = 0; r < runs; ++r)
-			{
-				const_iterator E = run_end[r];
-				for (const_iterator I = std::lower_bound(const_iterator(run_begin[r]), E, xz); I != E; ++I)
-				{
-					if ((*I).position().xz() != xz)
-						break;
+			const_iterator I = std::lower_bound(B, E, xz);
+			if ((I == E) || ((*I).position().xz() != xz))
+				continue;
 
-					predicate(*I);
-				}
+			predicate(*I);
+
+			for (++I; I != E; ++I)
+			{
+				if ((*I).position().xz() != xz)
+					break;
+
+				predicate(*I);
 			}
 		}
 	}
