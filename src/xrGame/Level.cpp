@@ -696,7 +696,25 @@ void CLevel::ProcessSpawnEvents()
                     continue;
                 }
             }
-        }        
+        }
+
+        // kt: the object went offline while its spawn waited here for its models. The destroy sent
+        // with the offline switch was handled at once and found nothing; spawning it now leaves an
+        // object on the client that the server no longer has - an ecologist brought online and sent
+        // offline at once lived so for 7 minutes, and taking a weapon failed the game in a script
+        // (soak, 2026-10-18). Counted to the log at 1, 2, 4...
+        if (parent_id == 0xffff && ai().get_alife())
+        {
+            auto obj = ai().alife().objects().object(obj_id, true);
+            if (obj && !obj->m_bOnline)
+            {
+                static u32 kt_offline_spawns = 0;
+                const u32 n = ++kt_offline_spawns;
+                if ((n & (n - 1)) == 0)
+                    Msg("* [kt spawn] %s (%d) went offline before its postponed spawn, not spawned (%u so far)", obj->name_replace(), obj_id, n);
+                continue;
+            }
+        }
 
 		// If there is a parent of this object, check if its still in alife
 		if (parent_id != 0xffff)
