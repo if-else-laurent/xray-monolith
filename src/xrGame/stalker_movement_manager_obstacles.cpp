@@ -19,6 +19,7 @@
 #include "doors_actor.h"
 #include "doors_manager.h"
 #include "level_path_builder.h"
+#include "../xrEngine/IGame_Level.h"
 
 #ifndef MASTER_GOLD
 #	include "ai_debug.h"
@@ -118,6 +119,13 @@ bool stalker_movement_manager_obstacles::can_build_restricted_path(const obstacl
 
 	typedef SBaseParameters<float, u32, u32> evaluator_type;
 
+	// Seamless world experiment (kt): the path around the obstacles goes to the end of the level
+	// path, the next vertex of the world graph. In the game those are near and 4096 nodes did; in the
+	// world an edge runs 555 m through Cordon's rail tunnel to the Meadow, and a squad starting at the
+	// heap of boxes by the tunnel's mouth found no way round them and stood (2026-10-18). The same
+	// limit as the level path's in the world (CMovementManager::Load).
+	const u32 kt_max_nodes = g_kt_chunk.active ? 512 * 1024 - 1024 : 4096;
+
 	m_failed_to_build_path =
 		!ai().graph_engine().search(
 			ai().level_graph(),
@@ -127,7 +135,7 @@ bool stalker_movement_manager_obstacles::can_build_restricted_path(const obstacl
 			evaluator_type(
 				type_max(_dist_type),
 				_iteration_type(-1),
-				4096
+				kt_max_nodes
 			)
 		);
 
