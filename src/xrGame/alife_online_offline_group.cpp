@@ -245,25 +245,33 @@ void CSE_ALifeOnlineOfflineGroup::try_switch_online()
 	on_failed_switch_online();
 }
 
+// Seamless world experiment (kt): an online squad with a member offline. switch_online brings the
+// members online only when the squad itself comes online; a squad held online by the scripts (a
+// companion) loaded from a save made with its member beyond the online distance stayed online
+// with the member offline - no object in the game, never walked by the squad's offline brain
+// either: the escort ecologist south of Cordon stood for good (2026-10-14).
+// Only a squad that stays online brings them: one brought online and sent offline with the squad in
+// the same call was spawned on the client after its destroy (the spawn waits for the models) and
+// lived there with no server object (soak, 2026-10-18).
+static void kt_bring_members_online(CSE_ALifeOnlineOfflineGroup* squad)
+{
+	if (!g_kt_chunk.active || !squad->m_bOnline)
+		return;
+	const CSE_ALifeOnlineOfflineGroup::MEMBERS& members = squad->squad_members();
+	for (CSE_ALifeOnlineOfflineGroup::MEMBERS::const_iterator I = members.begin(); I != members.end(); ++I)
+	{
+		CSE_ALifeDynamicObject* member = (*I).second;
+		if (member->m_bOnline || kt_land_absent(member))
+			continue;
+		Msg("* [kt alife] %s: member %s of the online squad is offline, brought online", squad->name_replace(), member->name_replace());
+		squad->alife().add_online(member, false);
+	}
+}
+
 void CSE_ALifeOnlineOfflineGroup::try_switch_offline()
 {
 	if (m_members.empty())
 		return;
-
-	// Seamless world experiment (kt): an online squad with a member offline. switch_online brings the
-	// members online only when the squad itself comes online; a squad held online by the scripts (a
-	// companion) loaded from a save made with its member beyond the online distance stayed online
-	// with the member offline - no object in the game, never walked by the squad's offline brain
-	// either: the escort ecologist south of Cordon stood for good (2026-10-14).
-	if (g_kt_chunk.active && m_bOnline)
-		for (MEMBERS::iterator I = m_members.begin(); I != m_members.end(); ++I)
-		{
-			CSE_ALifeDynamicObject* member = (*I).second;
-			if (member->m_bOnline || kt_land_absent(member))
-				continue;
-			Msg("* [kt alife] %s: member %s of the online squad is offline, brought online", name_replace(), member->name_replace());
-			alife().add_online(member, false);
-		}
 
 	if (kt_land_absent(this))
 	{
@@ -272,7 +280,10 @@ void CSE_ALifeOnlineOfflineGroup::try_switch_offline()
 	}
 
 	if (!can_switch_offline())
+	{
+		kt_bring_members_online(this);
 		return;
+	}
 
 	if (!can_switch_online())
 	{
@@ -294,7 +305,10 @@ void CSE_ALifeOnlineOfflineGroup::try_switch_offline()
 		        (*I).second->name_replace());
 
 		if (alife().graph().actor()->o_Position.distance_to((*I).second->o_Position) <= alife().offline_distance())
+		{
+			kt_bring_members_online(this);
 			return;
+		}
 	}
 
 	alife().switch_offline(this);
