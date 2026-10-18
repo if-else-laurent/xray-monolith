@@ -246,6 +246,7 @@ MotionID CKinematicsAnimated::ID_Cycle(LPCSTR N)
 
 void CKinematicsAnimated::LL_FadeCycle(u16 part, float falloff, u8 mask_channel /*= (1<<0)*/)
 {
+	xrCriticalSectionGuard kt_guard(&UCalc_Mutex); // kt: see LL_UpdateTracks
 	BlendSVec& Blend = blend_cycles[part];
 
 	for (u32 I = 0; I < Blend.size(); I++)
@@ -263,6 +264,7 @@ void CKinematicsAnimated::LL_FadeCycle(u16 part, float falloff, u8 mask_channel 
 
 void CKinematicsAnimated::LL_CloseCycle(u16 part, u8 mask_channel /*= (1<<0)*/)
 {
+	xrCriticalSectionGuard kt_guard(&UCalc_Mutex); // kt: see LL_UpdateTracks
 	if (BI_NONE == part) return;
 	if (part >= MAX_PARTS) return;
 
@@ -374,6 +376,7 @@ CBlend* CKinematicsAnimated::LL_PlayCycle(u16 part, MotionID motion_ID, BOOL bMi
                                           float blendFalloff, float Speed, BOOL noloop, PlayCallback Callback,
                                           LPVOID CallbackParam, u8 channel/*=0*/)
 {
+	xrCriticalSectionGuard kt_guard(&UCalc_Mutex); // kt: see LL_UpdateTracks
 	// validate and unroll
 	if (!motion_ID.valid()) return 0;
 	if (BI_NONE == part)
@@ -510,6 +513,7 @@ CBlend* CKinematicsAnimated::PlayFX(LPCSTR N, float power_scale)
 CBlend* CKinematicsAnimated::LL_PlayFX(u16 bone, MotionID motion_ID, float blendAccrue, float blendFalloff, float Speed,
                                        float Power)
 {
+	xrCriticalSectionGuard kt_guard(&UCalc_Mutex); // kt: see LL_UpdateTracks
 	if (!motion_ID.valid()) return 0;
 	if (blend_fx.size() >= MAX_BLENDED) return 0;
 	if (BI_NONE == bone) bone = iRoot;
@@ -542,6 +546,12 @@ void CKinematicsAnimated::DestroyCycle(CBlend& B)
 
 void CKinematicsAnimated::LL_UpdateTracks(float dt, bool b_force, bool leave_blends)
 {
+	// kt: the blends are changed under the model's UCalc_Mutex, the lock CalculateBones holds (it is
+	// recursive: a blend's callback may play the next cycle). CalculateBonesThread updates the tracks
+	// while the game thread plays cycles and FXs (IBlend_Create updates the tracks too) on the same
+	// model; two of them erasing blends of one part left the erasing loop past the end of the vector
+	// and it read a blend 0 (soak, 2026-10-17)
+	xrCriticalSectionGuard kt_guard(&UCalc_Mutex);
 	BlendSVecIt I, E;
 	// Cycles
 	for (u16 part = 0; part < MAX_PARTS; part++)
@@ -630,6 +640,7 @@ void CKinematicsAnimated::LL_UpdateFxTracks(float dt)
 
 void CKinematicsAnimated::UpdateTracks()
 {
+	xrCriticalSectionGuard kt_guard(&UCalc_Mutex); // kt: see LL_UpdateTracks
 	_DBG_SINGLE_USE_MARKER;
 	if (Update_LastTime == RDEVICE.dwTimeGlobal) return;
 	u32 DT = RDEVICE.dwTimeGlobal - Update_LastTime;
@@ -736,6 +747,7 @@ void CKinematicsAnimated::LL_SetChannelFactor(u16 channel, float factor)
 
 void CKinematicsAnimated::IBlend_Startup()
 {
+	xrCriticalSectionGuard kt_guard(&UCalc_Mutex); // kt: see LL_UpdateTracks
 	_DBG_SINGLE_USE_MARKER;
 	CBlend B;
 	ZeroMemory(&B, sizeof(B));
