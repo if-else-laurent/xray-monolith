@@ -97,6 +97,20 @@ BOOL verify_sp(ISpatialShared sp, Fvector& node_center, float node_radius)
 	return TRUE;
 }
 
+// kt: node_ptr is looked at without the lock first (the fast way) and again under it. Particles move
+// their places in the particles' thread while a zone's shedule_Update in the game thread destroys
+// them (PSI_destroy unregisters at once); a move that passed the first look then removed a spatial
+// that was no longer in the base and read node 0 (soak, 2026-10-15 and 2026-10-17). What the second
+// look turns away is counted, and the count goes to the log at 1, 2, 4, 8...
+static xr_atomic_u32 kt_spatial_raced;
+
+static void kt_spatial_race(const char* what)
+{
+	const u32 n = ++kt_spatial_raced;
+	if ((n & (n - 1)) == 0)
+		Msg("* [kt spatial] %s: changed by another thread meanwhile, let be (%u so far)", what, n);
+}
+
 void ISpatial::Register()
 {
 	if (spatial.node_ptr)
@@ -108,6 +122,12 @@ void ISpatial::Register()
 		// register
 		R_ASSERT(spatial.space);
 		xrSRWLockGuard guard(&spatial.space->db_lock, false);
+		if (spatial.node_ptr)
+		{
+			// registered by another thread meanwhile: a second insert would leave a reference in a node
+			kt_spatial_race("a register");
+			return;
+		}
 		spatial.space->insert(this);
 		spatial.sector = 0;
 	}
@@ -119,6 +139,11 @@ void ISpatial::Unregister()
 	{
 		// remove
 		xrSRWLockGuard guard(&spatial.space->db_lock, false);
+		if (!spatial.node_ptr)
+		{
+			kt_spatial_race("an unregister");
+			return;
+		}
 		spatial.space->remove(this);
 		spatial.node_ptr = nullptr;
 		spatial.sector = nullptr;
@@ -138,6 +163,11 @@ void ISpatial::Move()
 			return;		// ???
 
 		xrSRWLockGuard guard(&spatial.space->db_lock, false);
+		if (!spatial.node_ptr)
+		{
+			kt_spatial_race("a move");
+			return;
+		}
 		spatial.space->remove(this);
 		spatial.space->insert(this);
 	}
@@ -211,6 +241,12 @@ void ISpatial_NODE::_remove(ISpatialShared S)
 	S->spatial.node_ptr = nullptr;
 	auto it = std::find(items.begin(),items.end(),S);
 	VERIFY(it!=items.end());
+	if (it == items.end())
+	{
+		// kt: not in its node (registered twice once); erasing end() would write past the vector
+		kt_spatial_race("a remove from a node not holding it");
+		return;
+	}
 	items.erase_fast(it);
 	S->spatial.space->stat_objects --;
 }
@@ -382,6 +418,11 @@ void ISpatial_DB::remove(ISpatialShared S)
 	stat_remove.Begin	();
 #endif
 	ISpatial_NODE* N = S->spatial.node_ptr;
+	if (!N)
+	{
+		kt_spatial_race("a remove of what is not in the base");
+		return;
+	}
 	N->_remove(S);
 
 	// Recurse
