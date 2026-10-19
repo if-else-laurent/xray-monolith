@@ -24,6 +24,16 @@ LPCSTR get_name(const CSE_Abstract* abstract)
 	return (abstract->name_replace());
 }
 
+// Seamless world experiment (kt): a script gives a thing it makes a name of its own (the unique name,
+// what name() answers), before the thing is registered: the name goes into the save with its spawn
+// packet. alife():create names a thing <section><id>, and a camp of ours put into a passage wants its
+// men and fires known by name. Nothing of the game's calls it; is it there - `cse_abstract.set_name`.
+static void kt_set_name(CSE_Abstract* abstract, LPCSTR name)
+{
+	if (name && *name)
+		abstract->set_name_replace(name);
+}
+
 CScriptIniFile* get_spawn_ini(CSE_Abstract* abstract)
 {
 	return ((CScriptIniFile*)&abstract->spawn_ini());
@@ -115,6 +125,7 @@ void CSE_Abstract::script_register(lua_State* L)
 		.def_readwrite("angle", &BaseType::o_Angle)
 		.def("section_name", &get_section_name)
 		.def("name", &get_name)
+		.def("set_name", &kt_set_name)
 		.def("clsid", &BaseType::script_clsid)
 		.def("spawn_ini", &get_spawn_ini)
 		.def("STATE_Read", &BaseType::STATE_Read, &WrapType::STATE_Read_static)
