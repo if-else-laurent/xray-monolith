@@ -307,6 +307,20 @@ CSE_Abstract* CALifeSimulator__spawn_item3(CALifeSimulator* self, LPCSTR section
 	return (item);
 }
 
+// Seamless world experiment (kt): a thing made and not yet registered, for a script that gives it a
+// name (cse_abstract:set_name), its custom data and the like before alife():register (reprocess_spawn)
+// puts it into the simulation. create(..., 65535, false) registers a thing with no parent all the
+// same - only an item for an online parent stays unregistered there - and a camp of ours came into
+// the simulation named smart_terrain<id> with no config, and its jobs failed the game (2026-10-20).
+// A method of its own, so that create stays as it is for everybody; is it there -
+// alife_simulator.create_unregistered.
+static CSE_Abstract* kt_create_unregistered(CALifeSimulator* self, LPCSTR section, const Fvector& position, u32 level_vertex_id, GameGraph::_GRAPH_ID game_vertex_id)
+{
+	Fvector moved_position = position;
+	kt_to_world(section, moved_position, level_vertex_id, game_vertex_id);
+	return (self->spawn_item(section, moved_position, level_vertex_id, game_vertex_id, ALife::_OBJECT_ID(-1), false));
+}
+
 CSE_Abstract* CALifeSimulator__spawn_ammo(CALifeSimulator* self, LPCSTR section, const Fvector& position, u32 level_vertex_id, GameGraph::_GRAPH_ID game_vertex_id, ALife::_OBJECT_ID id_parent, int ammo_to_spawn)
 {
 	//	if (id_parent == ALife::_OBJECT_ID(-1))
@@ -706,6 +720,7 @@ void CALifeSimulator::script_register(lua_State* L)
 		.def("create", &CALifeSimulator__spawn_item2)
 		.def("create", &CALifeSimulator__spawn_item)
 		.def("create", &CALifeSimulator__spawn_item3)
+		.def("create_unregistered", &kt_create_unregistered)
 		.def("create_ammo", &CALifeSimulator__spawn_ammo)
 		.def("release", &CALifeSimulator__release)
 		.def("spawn_id", &CALifeSimulator__spawn_id)
