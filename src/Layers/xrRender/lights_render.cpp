@@ -197,6 +197,7 @@ void CRender::render_lights(light_Package& LP)
 							if (L->m_moving_frames<32u)
 							{
 								L->GMLight.RGraph.clear_static<false>();
+								L->GMLight.RGraph.clear_lods<false>(); // kt: never drawn for a light (R_sun.cpp)
 								L->GMLight.traverse((CSector*)L->SpatialComponent->spatial.sector, L->X.S.frustum, L->position, L->X.S.combine);
 								L->GMLight.r_dsgraph_capture_static();
 								L->m_moving_frames++;

@@ -287,6 +287,10 @@ void CRender::render_sun_cascade(u32 cascade_ind)
     {
         PROF_EVENT("Render Cascade: SMAP traverse");
         phase = PHASE_SMAP;
+        // kt: the far models (LODs) a capture puts into mapLOD are drawn and cleared for the main view
+        // only (r_dsgraph_render_lods); a cascade's were never cleared and grew with every capture -
+        // a list of 1.8 GB after an hour of soak, the steps of its capacity the memory's steps
+        cascade.GMCascade.RGraph.clear_lods<false>();
         cascade.GMCascade.traverse(pOutdoorSector, cascade.cull_frustum, cascade.cull_COP, cascade.cull_xform);
         cascade.GMCascade.r_dsgraph_capture(false, true);
     }

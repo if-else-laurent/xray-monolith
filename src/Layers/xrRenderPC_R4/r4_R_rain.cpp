@@ -208,6 +208,7 @@ void CRender::render_rain()
 
 	// Begin SMAP-render
 	phase = PHASE_SMAP;
+	GMRainWet.RGraph.clear_lods<false>(); // kt: never drawn for the rain's map (R_sun.cpp)
 	GMRainWet.traverse(pOutdoorSector, rainwet_cull_frustum, rainwet_cull_COP, rainwet_cull_xform);
 	GMRainWet.r_dsgraph_capture_static();
 
