@@ -87,6 +87,7 @@ void CDetailManager::cache_Decompress(Slot* S)
 	if (D.empty) return;
 
 	DetailSlot& DS = QueryDB(D.sx, D.sz);
+	const int kt_piece = kt_slot_piece();
 
 	// Select polygons
 	Fvector bC, bD;
@@ -226,6 +227,13 @@ RDEVICE.Statistic->TEST0.End		();
 				SGameMtl* mtl = GMLib.GetMaterialByIdx(T.material);
 				
 				if (mtl->Flags.test(SGameMtl::flPassable))
+					continue;
+
+				// seamless world experiment (kt): an attached level's grass grows on its own ground and
+				// on ours, not on another level's. The Meadow's slots over the cut field above
+				// Darkscape's tunnel planted the field's light grass on the tunnel's floor 4 m below
+				// (2026-10-20); the level's own grass is not looked at here
+				if (kt_other_level(kt_piece, xrc.r_begin()[tid].id))
 					continue;
 
 				//Detect sector

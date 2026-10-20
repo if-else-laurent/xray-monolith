@@ -236,6 +236,28 @@ void CDetailManager::cache_Update(int v_x, int v_z, Fvector& view, int limit)
 
 // kt: the base of the models' numbers for the slot QueryDB gave last on this thread (0: the level's own)
 static thread_local u32 kt_query_base = 0;
+static thread_local int kt_query_piece = -1;
+
+int CDetailManager::kt_slot_piece()
+{
+	return kt_query_piece;
+}
+
+bool CDetailManager::kt_other_level(int piece, u32 tri) const
+{
+	if (piece < 0) return false;
+	for (u32 p = 0; p < g_kt_chunk.pieces.size(); p++)
+	{
+		const KtPiece& P = g_kt_chunk.pieces[p];
+		if (tri < P.tri_base || tri >= P.tri_base + P.tri_count) continue;
+		if (int(p) == piece) return false;
+		// a level has grass of its own; a piece of ours has none, and the grass grows on it
+		for (const KtGrass& G : kt_grass)
+			if (G.piece == p) return true;
+		return false;
+	}
+	return true; // the level's own ground
+}
 
 u32 CDetailManager::kt_wide(u32 id)
 {
@@ -257,6 +279,7 @@ bool CDetailManager::kt_slot(const KtGrass& G, float wx, float wz, DetailSlot& D
 	// the models' numbers stay the file's own: a slot has six bits for one, and the models of all
 	// the levels together are more than that. Whoever takes the slot adds the base (kt_wide).
 	kt_query_base = G.id_base;
+	kt_query_piece = int(G.piece);
 	DS.w_y(DS.r_ybase() + G.offset.y, DS.r_yheight() + .3f);
 	return true;
 }
@@ -264,6 +287,7 @@ bool CDetailManager::kt_slot(const KtGrass& G, float wx, float wz, DetailSlot& D
 DetailSlot& CDetailManager::QueryDB(int sx, int sz)
 {
 	kt_query_base = 0;
+	kt_query_piece = -1;
 	// Seamless world experiment (kt): on an extra level's land its own grass is shown. The slot is
 	// taken from its file at the place this world slot covers there, its models renumbered and its
 	// height moved with the level. The grids of slots do not coincide, so the grass lies up to a

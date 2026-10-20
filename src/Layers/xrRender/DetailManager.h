@@ -189,6 +189,11 @@ public:
 	xr_vector<KtGrass> kt_grass;
 	bool kt_slot(const KtGrass& G, float wx, float wz, DetailSlot& DS);
 	static u32 kt_wide(u32 id);
+	// the attached level whose grass the slot QueryDB gave last on this thread is: its piece, or -1
+	// for the level's own grass
+	static int kt_slot_piece();
+	// a triangle of the static model that is another level's ground than the grass of `piece`
+	bool kt_other_level(int piece, u32 tri) const;
 	DetailSlot DS_empty;
 
 public:
