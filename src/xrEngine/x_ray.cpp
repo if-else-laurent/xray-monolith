@@ -1096,7 +1096,7 @@ int APIENTRY WinMain_impl(HINSTANCE hInstance,
 	compute_build_id();
 	Core._initialize("xray", NULL, TRUE, fsgame[0] ? fsgame : NULL);
 	{
-		// see serialize_flush_process_write_buffers below; -1: the function was not found
+		// see serialize_flush_process_write_buffers below; -1: not Wine or the function was not found
 		extern int g_flush_imports_replaced;
 		Msg("* FlushProcessWriteBuffers: one caller at a time, imports replaced: %d", g_flush_imports_replaced);
 		// see dinput_notify_without_waiting below; -1: not Wine, nothing was touched
@@ -1278,7 +1278,8 @@ extern BOOL DllMainXrPhysics(HANDLE hModule, DWORD ul_reason_for_call, LPVOID lp
 // thread_get_state). Under Rosetta two threads doing that to each other at the same moment
 // never return, the rest of the workers pile up behind them, and the primary thread waits for
 // its tasks for ever: the game stands still at zero CPU, seen at exit and while loading a save.
-// The imports of the two libraries are pointed at a wrapper that lets one thread in at a time.
+// The imports of the two libraries are pointed at a wrapper that lets one thread in at a time,
+// under Wine only.
 typedef VOID (WINAPI* flush_buffers_type)(VOID);
 static flush_buffers_type s_flush_original = nullptr;
 static CRITICAL_SECTION s_flush_guard;
@@ -1343,6 +1344,11 @@ static int replace_import(HMODULE module, LPCSTR function, void* replacement)
 
 static void serialize_flush_process_write_buffers()
 {
+	// The deadlock is one of Wine on macOS; on Windows the call needs no lock and gets none.
+	HMODULE const ntdll = GetModuleHandleA("ntdll.dll");
+	if (!ntdll || !GetProcAddress(ntdll, "wine_get_version"))
+		return;
+
 	HMODULE const kernel32 = GetModuleHandleA("kernel32.dll");
 	s_flush_original = kernel32 ? (flush_buffers_type)GetProcAddress(kernel32, "FlushProcessWriteBuffers") : nullptr;
 	if (!s_flush_original)
