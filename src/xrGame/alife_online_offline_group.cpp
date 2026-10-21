@@ -188,9 +188,11 @@ bool CSE_ALifeOnlineOfflineGroup::synchronize_location()
 		// their own, so online they kept the node and the vertex of the world graph they came online
 		// with, and the squad copied them. On one level nobody noticed; in the world a squad that
 		// walked over a seam stayed "on the level it came from" for scripts and for the map.
-		for (MEMBERS::iterator I = m_members.begin(); I != m_members.end(); ++I)
-			if (ai().level_graph().valid_vertex_id((*I).second->m_tNodeID))
-				(*I).second->CSE_ALifeDynamicObject::synchronize_location();
+		// Only in the world: without its keys the squad copies its first member as in the game.
+		if (g_kt_chunk.active)
+			for (MEMBERS::iterator I = m_members.begin(); I != m_members.end(); ++I)
+				if (ai().level_graph().valid_vertex_id((*I).second->m_tNodeID))
+					(*I).second->CSE_ALifeDynamicObject::synchronize_location();
 
 		MEMBER* member = (*m_members.begin()).second;
 		o_Position = member->o_Position;

@@ -29,7 +29,7 @@
 #include "stalker_planner.h"
 #include "ai_sounds.h"
 
-// seamless world experiment (kt): ai_ignore_actor in every build, see console_commands.cpp
+// seamless world experiment (kt): kt_ai_ignore_actor in every build, see console_commands.cpp
 extern Flags32 g_kt_ai;
 
 #ifndef MASTER_GOLD

@@ -37,7 +37,7 @@
 #include "../../xrServerEntities/script_engine.h"
 #include "script_game_object.h"
 
-// seamless world experiment (kt): ai_ignore_actor in every build, see console_commands.cpp
+// seamless world experiment (kt): kt_ai_ignore_actor in every build, see console_commands.cpp
 extern Flags32 g_kt_ai;
  //Alundaio
 //-Alundaio

@@ -2746,8 +2746,9 @@ void CCC_RegisterCommands()
 
 	// seamless world experiment (kt): there in every build - the one who tests the world is to watch
 	// it and not to be hunted through it; the seams' script switches it by its test aids. The
-	// game's own flag (aiIgnoreActor) lives only in the developers' builds.
-	CMD3(CCC_Mask, "ai_ignore_actor", &g_kt_ai, 1);
+	// game's own flag (aiIgnoreActor) lives only in the developers' builds, under the name
+	// ai_ignore_actor; ours has its own name so that a release build does not answer to that one.
+	CMD3(CCC_Mask, "kt_ai_ignore_actor", &g_kt_ai, 1);
 
 	// Physics
 	CMD1(CCC_PHFps, "ph_frequency");

@@ -23,7 +23,7 @@
 #include "memory_manager.h"
 #include "../xrEngine/IGame_Persistent.h"
 
-// seamless world experiment (kt): ai_ignore_actor in every build, see console_commands.cpp
+// seamless world experiment (kt): kt_ai_ignore_actor in every build, see console_commands.cpp
 extern Flags32 g_kt_ai;
 
 #ifndef MASTER_GOLD
