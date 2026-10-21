@@ -195,7 +195,58 @@ void CALifeMonsterDetailPathManager::actualize()
 	if (m_path.size() > 1 && (GameGraph::_GRAPH_ID)m_path[m_path.size() - 2] == old_next_gv)
 		m_walked_distance = old_walked;
 	else
+	{
 		m_walked_distance = 0.f;
+		kt_resume_line((GameGraph::_GRAPH_ID)m_path[m_path.size() - 2]);
+	}
+}
+
+// Seamless world experiment (kt): a path built anew starts the edge from its first vertex, and on an
+// edge with a line kt_walk_line then puts the object at the line's start. A squad that went offline
+// in the middle of such an edge had its path cleared (on_switch_offline) and was put back at the
+// start of the line - on the 555 m edge 638-5338 of the Meadow that was ~95 m from the actor, within
+// the online radius again, and it walked the same stretch round and round (2026-10-21, docs/findings.md
+// of kyshtym-toddler-zone). Where the object stands by the line of the edge it sets out on, the walk
+// is counted from its place projected onto the line.
+void CALifeMonsterDetailPathManager::kt_resume_line(const GameGraph::_GRAPH_ID& next)
+{
+	if (!g_kt_chunk.active || g_kt_chunk.graph_lines.empty())
+		return;
+	CSE_ALifeDynamicObject& self = object().get_object();
+	bool reversed = false;
+	const KtChunk::GraphLine* line = g_kt_chunk.graph_line(self.m_tGraphID, next, reversed);
+	if (!line || line->points.size() < 2 || line->length <= 0.f)
+		return;
+	const float length = ai().game_graph().distance(self.m_tGraphID, next);
+	if (length <= 0.f)
+		return;
+	// the nearest point of the line to the object, and how far along the line it is
+	float best = flt_max, best_along = 0.f, along = 0.f;
+	for (u32 i = 1; i < line->points.size(); i++)
+	{
+		const Fvector& a = line->points[i - 1];
+		const Fvector& b = line->points[i];
+		Fvector ab = Fvector().sub(b, a);
+		const float piece = ab.magnitude();
+		float t = 0.f;
+		if (piece > 0.f)
+			t = _min(_max(Fvector().sub(self.o_Position, a).dotproduct(ab) / (piece * piece), 0.f), 1.f);
+		const float distance = self.o_Position.distance_to(Fvector().mad(a, ab, t));
+		if (distance < best)
+		{
+			best = distance;
+			best_along = along + t * piece;
+		}
+		along += piece;
+	}
+	if (best > 20.f)
+		return;
+	if (reversed)
+		best_along = line->length - best_along;
+	// short of the next vertex: reaching it is the walk's to do
+	m_walked_distance = _min(best_along / line->length, 0.999f) * length;
+	Msg("* [kt walk] %s sets out on the edge %u - %u (%.0f m) from %.0f m along its line, %.1f m off it",
+	    self.name_replace(), u32(self.m_tGraphID), u32(next), length, m_walked_distance, best);
 }
 
 void CALifeMonsterDetailPathManager::update(const ALife::_TIME_ID& time_delta)

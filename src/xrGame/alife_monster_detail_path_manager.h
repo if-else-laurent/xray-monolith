@@ -52,6 +52,8 @@ private:
 	void setup_current_speed();
 	void follow_path(const ALife::_TIME_ID& time_delta);
 	void kt_walk_line(const GameGraph::_GRAPH_ID& next, const float& length);
+	// seamless world experiment (kt): a path built anew on an edge with a line starts where the object stands by it
+	void kt_resume_line(const GameGraph::_GRAPH_ID& next);
 	void update(const ALife::_TIME_ID& time_delta);
 
 public:
