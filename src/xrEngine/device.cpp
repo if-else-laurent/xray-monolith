@@ -347,6 +347,20 @@ void CRenderDevice::on_idle()
 		return;
 	}
 
+	// kt: the log is written by its own thread into a buffered file and reaches the disk when the
+	// buffer is full or a flush is asked for. When the game draws but its scripts are silent (no
+	// actor_on_update, a loading that does not end) the last lines stood in the buffer and whoever
+	// read the log from outside saw nothing of why. Once a second the buffer is handed to the disk.
+	{
+		static DWORD kt_log_flushed = 0;
+		const DWORD now = GetTickCount();
+		if (now - kt_log_flushed >= 1000)
+		{
+			kt_log_flushed = now;
+			xrLogger::FlushLog();
+		}
+	}
+
 	PROF_FRAME("Main Thread");
 
 #ifdef DEDICATED_SERVER
