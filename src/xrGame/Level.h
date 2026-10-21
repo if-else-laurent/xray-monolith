@@ -238,8 +238,8 @@ public:
 	// kt: sends "actor_on_location_change" (old name, new name) to the scripts when the actor has
 	// gone deep into another location of the world (-kt_location_depth); once a frame from OnFrame
 	void kt_watch_location();
-	// kt: metres of walking from the actor to the nearest node of the location; flt_max further
-	// than -kt_reach looks, below zero when it is not known (no table, the actor off the AI map)
+	// kt: metres of walking from the actor to the nearest node of the location (by the cross table);
+	// flt_max further than -kt_location_depth, below zero when not known (the actor off the AI map)
 	float kt_location_way(u32 location) const;
 	struct KtLocationWatch
 	{

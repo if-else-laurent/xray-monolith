@@ -31,6 +31,9 @@
 #include "level_graph.h"
 #include "ai_object_location.h"
 #include "game_graph.h"
+#include "game_level_cross_table.h"
+#include <queue>
+#include <unordered_map>
 #include "mt_config.h"
 #include "phcommander.h"
 #include "map_manager.h"
@@ -1883,30 +1886,80 @@ shared_str CLevel::kt_location_name() const
 	return name();
 }
 
+// The location of a node is the level of its vertex of the world graph by the cross table - as the
+// actor's own (CGameObject takes his vertex so). A node of our land between levels has the vertex of
+// the nearest level's node; the line where that flips lies anywhere in our land, often hundreds of
+// metres from either level's own nodes, so the way is counted to nodes of the location, not of the
+// level's piece of the map. The search stops at -kt_location_depth: further is all the same.
 float CLevel::kt_location_way(u32 location) const
 {
-	if (g_kt_chunk.reach_out <= 0.f || !ai().get_level_graph() || !ai().level_graph().kt_own_vertex_count() || !g_actor)
-		return -1.f;
+	if (!ai().get_level_graph() || !ai().get_cross_table() || !ai().get_game_graph() || !g_actor) return -1.f;
 	const CLevelGraph& graph = ai().level_graph();
-	const u32 node = g_actor->ai_location().level_vertex_id();
-	if (!graph.valid_vertex_id(node) || graph.vertex_position(node).distance_to_xz(g_actor->Position()) > 15.f)
+	const u32 start = g_actor->ai_location().level_vertex_id();
+	if (!graph.valid_vertex_id(start) || graph.vertex_position(start).distance_to_xz(g_actor->Position()) > 15.f)
 		return -1.f;
-	// the location's piece of the merged map: 0 the loaded level, 1.. the attached ones by name
-	const GameGraph::LEVEL_MAP& levels = ai().game_graph().header().levels();
-	GameGraph::LEVEL_MAP::const_iterator I = levels.find(GameGraph::_LEVEL_ID(location));
-	if (I == levels.end()) return -1.f;
-	LPCSTR level_name = *(*I).second.name();
-	if (0 == stricmp(*name(), level_name)) return graph.kt_reach(0, node);
-	for (u32 i = 0; i < g_kt_chunk.pieces.size(); i++)
-		if (0 == stricmp(g_kt_chunk.pieces[i].name, level_name)) return graph.kt_reach(i + 1, node);
-	return -1.f;
+	const CGameLevelCrossTable& cross = ai().cross_table();
+	const CGameGraph& world = ai().game_graph();
+	const u32 count = graph.header().vertex_count();
+	auto location_of = [&](u32 node)
+	{
+		const u32 vertex = cross.vertex(node).game_vertex_id();
+		return world.valid_vertex_id(vertex) ? u32(world.kt_level(vertex)) : u32(-1);
+	};
+	const float limit = g_kt_chunk.location_depth;
+	const float cell = graph.header().cell_size(), diagonal = cell * 1.41421356f;
+	// a link is to the next cell; the game's own maps have a stray one that leads far away
+	auto next_to = [&](u32 a, u32 b)
+	{
+		const Fvector A = graph.vertex_position(a), B = graph.vertex_position(b);
+		return _abs(A.x - B.x) + _abs(A.z - B.z) < cell * 2.5f;
+	};
+	typedef std::pair<float, u32> Item;
+	std::priority_queue<Item, xr_vector<Item>, std::greater<Item> > queue;
+	std::unordered_map<u32, float> metres;
+	metres.reserve(4096);
+	metres[start] = 0.f;
+	queue.push(Item(0.f, start));
+	while (!queue.empty())
+	{
+		const Item top = queue.top();
+		queue.pop();
+		if (top.first > metres[top.second]) continue;
+		if (location_of(top.second) == location) return top.first;
+		const CLevelGraph::CVertex* V = graph.vertex(top.second);
+		u32 side[4];
+		for (int k = 0; k < 4; k++)
+		{
+			side[k] = V->link(k);
+			if (side[k] >= count || !next_to(top.second, side[k])) side[k] = u32(-1);
+		}
+		auto reach = [&](u32 node, float way)
+		{
+			if (way > limit) return;
+			std::unordered_map<u32, float>::iterator I = metres.find(node);
+			if (I != metres.end() && I->second <= way) return;
+			metres[node] = way;
+			queue.push(Item(way, node));
+		};
+		for (int k = 0; k < 4; k++)
+		{
+			if (side[k] == u32(-1)) continue;
+			reach(side[k], top.first + cell);
+			// corners cut where both sides are open, as kt_build_reach counts
+			if (side[(k + 1) & 3] == u32(-1)) continue;
+			const u32 corner = graph.vertex(side[k])->link((k + 1) & 3);
+			if (corner < count && next_to(side[k], corner)) reach(corner, top.first + diagonal);
+		}
+	}
+	return flt_max;
 }
 
 // Seamless world experiment (kt): what a level change told the scripts in the game - "the actor is
 // on another level now" - is told here when he walks over a seam. His location by the world graph
-// changes the moment his vertex does, right at the seam, and goes back with one step; the event
-// waits until he is deep in the new location: further than -kt_location_depth metres of walking
-// from the nearest node of the one he left, or there for its seconds. A step back first cancels it.
+// changes the moment his vertex does, somewhere in the land between the levels, and goes back with
+// one step; the event waits until he is deep in the new location: further than -kt_location_depth
+// metres of walking from the nearest node of the one he left (kt_location_way), or there for its
+// seconds. A step back first cancels it.
 // Scripts get "actor_on_location_change" (old name, new name) through SendScriptCallback, as the
 // seams' script sent it by itself before; the one who listens adds the callback (AddScriptCallback).
 void CLevel::kt_watch_location()
@@ -1947,7 +2000,7 @@ void CLevel::kt_watch_location()
 	if (from == levels.end() || to == levels.end()) return;
 	string64 metres;
 	if (way < 0.f) xr_strcpy(metres, "?");
-	else if (way == flt_max) xr_sprintf(metres, "over %.0f", g_kt_chunk.reach_out);
+	else if (way == flt_max) xr_sprintf(metres, "over %.0f", g_kt_chunk.location_depth);
 	else xr_sprintf(metres, "%.0f", way);
 	Msg("* [kt location] %s -> %s: %s m of walking from %s, %.1f s there", *(*from).second.name(), *(*to).second.name(),
 	    metres, *(*from).second.name(), seconds);

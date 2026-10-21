@@ -262,9 +262,10 @@ struct ENGINE_API KtChunk
 	float reach_in, reach_out;
 	// -kt_location_depth <metres>,<seconds>: when scripts hear that the actor went over to another
 	// location of the world ("actor_on_location_change", CLevel::kt_watch_location). His location
-	// by the world graph changes at once at a seam; the event waits until he is further than
-	// <metres> of walking from the nearest node of the location he left, or has stayed on the new
-	// one for <seconds>. A step back before that cancels it. 60 m and 20 s if not given.
+	// by the world graph changes at once, where the vertices of the land between the levels do; the
+	// event waits until he is further than <metres> of walking from the nearest node of the location
+	// he left, or has stayed on the new one for <seconds>. A step back before that cancels it. 60 m
+	// and 20 s if not given.
 	float location_depth, location_wait;
 	// -kt_sight <file under $game_levels$>,<in>,<out>: from where each level is seen, counted ahead
 	// by the tools. A grid over the world; a cell holds, for the level and every level attached
