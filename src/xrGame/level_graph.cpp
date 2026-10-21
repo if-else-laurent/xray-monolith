@@ -660,6 +660,18 @@ u32 CLevelGraph::vertex(u32 current_node_id, const Fvector& position) const
 	STOP_PROFILE
 }
 
+#ifndef AI_COMPILER
+// kt: the node has at least one neighbour (the merge leaves the trimmed nodes with none)
+static bool kt_linked(const CLevelGraph& graph, u32 vertex_id)
+{
+	const CLevelGraph::CVertex* V = graph.vertex(vertex_id);
+	for (int i = 0; i < 4; i++)
+		if (graph.valid_vertex_id(V->link(i)))
+			return (true);
+	return (false);
+}
+#endif
+
 u32 CLevelGraph::vertex_id(const Fvector& position) const
 {
 	VERIFY2(
@@ -732,8 +744,43 @@ u32 CLevelGraph::vertex_id(const Fvector& position) const
 		}
 	}
 
+#ifndef AI_COMPILER
+	// Seamless world experiment (kt), in the merged map only: a node with no link at all is no place to
+	// stand. Behind a level's trim lie nodes the merge left unlinked, a few centimetres over the living
+	// ones of the level next door in the same cells (68 at the Garbage's joint, 116 in the south
+	// entrance's hut); the nearest under a man was often the dead one, and a squad's commander standing
+	// on it had no path and ran on the spot (online escape-garbage, 2026-10-20). Of the nodes of the cell
+	// within half a metre of the chosen one in height, one with a link is taken instead.
+	if (m_kt_own_count && best_vertex_id != u32(-1) && !kt_linked(*this, best_vertex_id))
+	{
+		u32 linked = u32(-1);
+		float linked_dy = .5f;
+		for (u32 r = 0; r < runs; r++)
+		{
+			CVertex* E = run_end[r];
+			for (CVertex* I = std::lower_bound(run_begin[r], E, _vertex_position.xz()); I != E; ++I)
+			{
+				if ((*I).position().xz() != _vertex_position.xz())
+					break;
+				const u32 id = u32(I - B);
+				if (!kt_linked(*this, id))
+					continue;
+				const float dy = _abs(vertex_plane_y(id, position.x, position.z) - y);
+				if (dy <= linked_dy)
+				{
+					linked_dy = dy;
+					linked = id;
+				}
+			}
+		}
+		if (linked != u32(-1))
+			best_vertex_id = linked;
+	}
+#endif
+
 	return (best_vertex_id);
 }
+
 
 static const int max_guess_vertex_count = 4;
 
