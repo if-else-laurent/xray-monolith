@@ -235,6 +235,19 @@ public:
 	virtual shared_str kt_location_name() const;
 	Fvector kt_level_offset(LPCSTR level_name) const;
 	bool kt_level_in_world(LPCSTR level_name) const;
+	// kt: sends "actor_on_location_change" (old name, new name) to the scripts when the actor has
+	// gone deep into another location of the world (-kt_location_depth); once a frame from OnFrame
+	void kt_watch_location();
+	// kt: metres of walking from the actor to the nearest node of the location; flt_max further
+	// than -kt_reach looks, below zero when it is not known (no table, the actor off the AI map)
+	float kt_location_way(u32 location) const;
+	struct KtLocationWatch
+	{
+		u32 told = u32(-1);    // the location the scripts were last told of; -1 - not looked yet
+		u32 next = u32(-1);    // the other location the actor is on now, while not yet deep in it
+		u32 since = 0;         // since when he is there, Device.dwTimeGlobal
+		u32 checked = 0;       // the next look, Device.dwTimeGlobal
+	} m_kt_location_watch;
 	virtual void OnRender();
 
 	enum DBG_RENDER_FLAGS

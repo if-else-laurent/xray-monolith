@@ -258,6 +258,10 @@ static void kt_chunk_setup()
 		if (g_kt_chunk.reach_out < g_kt_chunk.reach_in) g_kt_chunk.reach_out = g_kt_chunk.reach_in;
 		Msg("* [kt stream] within that, a neighbour is held when it is nearer than %.0f m of walking (let go beyond %.0f m) or is seen", g_kt_chunk.reach_in, g_kt_chunk.reach_out);
 	}
+	if (LPCSTR k = strstr(params, "-kt_location_depth "))
+		sscanf(k + 19, "%f,%f", &g_kt_chunk.location_depth, &g_kt_chunk.location_wait);
+	Msg("* [kt location] scripts hear of another location when the actor is %.0f m of walking from the one he left or has stayed %.0f s",
+	    g_kt_chunk.location_depth, g_kt_chunk.location_wait);
 	if (LPCSTR k = strstr(params, "-kt_sight "))
 	{
 		string_path name = "", file;

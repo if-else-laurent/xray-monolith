@@ -260,6 +260,12 @@ struct ENGINE_API KtChunk
 	// the nearest node of the level: nearer than <in> it is taken, beyond <out> it may go. A level
 	// behind a hill with the only way in through a far tunnel is not wanted on this side. 0 - off.
 	float reach_in, reach_out;
+	// -kt_location_depth <metres>,<seconds>: when scripts hear that the actor went over to another
+	// location of the world ("actor_on_location_change", CLevel::kt_watch_location). His location
+	// by the world graph changes at once at a seam; the event waits until he is further than
+	// <metres> of walking from the nearest node of the location he left, or has stayed on the new
+	// one for <seconds>. A step back before that cancels it. 60 m and 20 s if not given.
+	float location_depth, location_wait;
 	// -kt_sight <file under $game_levels$>,<in>,<out>: from where each level is seen, counted ahead
 	// by the tools. A grid over the world; a cell holds, for the level and every level attached
 	// (in the order of the keys), the metres to the nearest thing of it that is seen from there:
@@ -333,7 +339,7 @@ struct ENGINE_API KtChunk
 		return strict && (foreign(piece, a.x, a.z) || foreign(piece, b.x, b.z) || foreign(piece, c.x, c.z));
 	}
 
-	KtChunk() : configured(false), active(false), loading(false), current(0), fake_material(u32(-1)), static_radius(0), stream_in(0), stream_out(0), reach_in(0), reach_out(0), sight_in(0), sight_out(0), sight_x0(0), sight_z0(0), sight_cell(1), sight_nx(0), sight_nz(0), sight_pieces(0), base_loaded(true), base_wanted(true), base_manual(false), base_has_walk(false), mask_x0(0), mask_z0(0), mask_cell(1), mask_nx(0), mask_nz(0), mask_pieces(0)
+	KtChunk() : configured(false), active(false), loading(false), current(0), fake_material(u32(-1)), static_radius(0), stream_in(0), stream_out(0), reach_in(0), reach_out(0), location_depth(60.f), location_wait(20.f), sight_in(0), sight_out(0), sight_x0(0), sight_z0(0), sight_cell(1), sight_nx(0), sight_nz(0), sight_pieces(0), base_loaded(true), base_wanted(true), base_manual(false), base_has_walk(false), mask_x0(0), mask_z0(0), mask_cell(1), mask_nx(0), mask_nz(0), mask_pieces(0)
 	{
 		name[0] = 0;
 		base[0] = 0;

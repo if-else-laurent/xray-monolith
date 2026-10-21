@@ -1172,6 +1172,8 @@ void CLevel::OnFrame()
 		m_ph_commander_scripts->update();
 	}
 
+	kt_watch_location(); // seamless world experiment (kt)
+
 	// update static sounds
 	if (!g_dedicated_server)
 	{
@@ -1879,6 +1881,79 @@ shared_str CLevel::kt_location_name() const
 		if (I != levels.end()) return (*I).second.name();
 	}
 	return name();
+}
+
+float CLevel::kt_location_way(u32 location) const
+{
+	if (g_kt_chunk.reach_out <= 0.f || !ai().get_level_graph() || !ai().level_graph().kt_own_vertex_count() || !g_actor)
+		return -1.f;
+	const CLevelGraph& graph = ai().level_graph();
+	const u32 node = g_actor->ai_location().level_vertex_id();
+	if (!graph.valid_vertex_id(node) || graph.vertex_position(node).distance_to_xz(g_actor->Position()) > 15.f)
+		return -1.f;
+	// the location's piece of the merged map: 0 the loaded level, 1.. the attached ones by name
+	const GameGraph::LEVEL_MAP& levels = ai().game_graph().header().levels();
+	GameGraph::LEVEL_MAP::const_iterator I = levels.find(GameGraph::_LEVEL_ID(location));
+	if (I == levels.end()) return -1.f;
+	LPCSTR level_name = *(*I).second.name();
+	if (0 == stricmp(*name(), level_name)) return graph.kt_reach(0, node);
+	for (u32 i = 0; i < g_kt_chunk.pieces.size(); i++)
+		if (0 == stricmp(g_kt_chunk.pieces[i].name, level_name)) return graph.kt_reach(i + 1, node);
+	return -1.f;
+}
+
+// Seamless world experiment (kt): what a level change told the scripts in the game - "the actor is
+// on another level now" - is told here when he walks over a seam. His location by the world graph
+// changes the moment his vertex does, right at the seam, and goes back with one step; the event
+// waits until he is deep in the new location: further than -kt_location_depth metres of walking
+// from the nearest node of the one he left, or there for its seconds. A step back first cancels it.
+// Scripts get "actor_on_location_change" (old name, new name) through SendScriptCallback, as the
+// seams' script sent it by itself before; the one who listens adds the callback (AddScriptCallback).
+void CLevel::kt_watch_location()
+{
+	KtLocationWatch& W = m_kt_location_watch;
+	if (!g_kt_chunk.active || !g_actor || !ai().get_game_graph() || !ai().game_graph().kt_placed()) return;
+	const u32 now = Device.dwTimeGlobal;
+	if (now < W.checked) return;
+	W.checked = now + 200;
+
+	const u32 location = kt_location_id();
+	if (location == u32(-1)) return;
+	if (W.told == u32(-1))
+	{
+		// the location the game was loaded on is not news
+		W.told = location;
+		return;
+	}
+	if (location == W.told)
+	{
+		W.next = u32(-1);
+		return;
+	}
+	if (location != W.next)
+	{
+		W.next = location;
+		W.since = now;
+	}
+	const float way = kt_location_way(W.told);
+	const float seconds = float(now - W.since) / 1000.f;
+	if (!(way >= 0.f && way > g_kt_chunk.location_depth) && seconds <= g_kt_chunk.location_wait) return;
+
+	const GameGraph::LEVEL_MAP& levels = ai().game_graph().header().levels();
+	GameGraph::LEVEL_MAP::const_iterator from = levels.find(GameGraph::_LEVEL_ID(W.told));
+	GameGraph::LEVEL_MAP::const_iterator to = levels.find(GameGraph::_LEVEL_ID(location));
+	W.told = location;
+	W.next = u32(-1);
+	if (from == levels.end() || to == levels.end()) return;
+	string64 metres;
+	if (way < 0.f) xr_strcpy(metres, "?");
+	else if (way == flt_max) xr_sprintf(metres, "over %.0f", g_kt_chunk.reach_out);
+	else xr_sprintf(metres, "%.0f", way);
+	Msg("* [kt location] %s -> %s: %s m of walking from %s, %.1f s there", *(*from).second.name(), *(*to).second.name(),
+	    metres, *(*from).second.name(), seconds);
+	luabind::functor<void> send;
+	if (ai().script_engine().functor("_G.SendScriptCallback", send))
+		send("actor_on_location_change", *(*from).second.name(), *(*to).second.name());
 }
 
 // Maps are drawn in a level's own coordinates, the world lives in the base level's.

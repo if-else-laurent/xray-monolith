@@ -532,6 +532,14 @@ bool kt_in_world(u32 level_id)
 	return (ai().game_graph().kt_in_world(level_id));
 }
 
+// The engine sends "actor_on_location_change" itself (CLevel::kt_watch_location): its threshold in
+// metres of walking, 0 without the world. A script that sent the event by itself before checks
+// that the function is there and leaves that to the engine.
+float kt_location_depth()
+{
+	return g_kt_chunk.active ? g_kt_chunk.location_depth : 0.f;
+}
+
 void prefetch_sound(LPCSTR name)
 {
 	Level().PrefetchSound(name);
@@ -2534,6 +2542,7 @@ void CLevel::script_register(lua_State* L)
 			def("vertex_position", vertex_position),
 			def("name", get_name),
 			def("kt_in_world", kt_in_world),
+			def("kt_location_depth", kt_location_depth),
 			def("prefetch_sound", prefetch_sound),
 
 			def("client_spawn_manager", get_client_spawn_manager),
