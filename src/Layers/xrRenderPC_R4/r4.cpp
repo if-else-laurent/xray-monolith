@@ -905,6 +905,7 @@ CRender::CRender()
 	: m_bFirstFrameAfterReset(false), kt_stage_into(nullptr), kt_stage_thread(0), kt_cur_swis(nullptr)
 {
 	kt_base_st.fs = nullptr;
+	kt_base_st.visuals = nullptr;
 	kt_base_st.done = false;
 	kt_kinds_reset();
 	init_cacades();

@@ -531,7 +531,7 @@ void CRender::kt_LoadChunk(u32 piece)
 {
 	kt_ahead_state* A = kt_chunk_begin(piece);
 	if (!A) return;
-	kt_chunk_visuals(*A, 0.f);
+	kt_chunk_visuals(*A, -1.f);
 	kt_chunk_end(*A);
 }
 
@@ -590,6 +590,7 @@ CRender::kt_ahead_state* CRender::kt_chunk_begin(u32 piece)
 	A->piece = piece;
 	A->fs = fs;
 	A->index = 0;
+	A->visuals = nullptr;
 	A->visuals_done = false;
 	A->ms_visuals = 0;
 	A->steps = 0;
@@ -689,7 +690,7 @@ CRender::kt_ahead_state* CRender::kt_chunk_begin(u32 piece)
 	return A;
 }
 
-// Some of the piece's visuals, for at most `budget` ms (0: all that are left). True when all are read.
+// Some of the piece's visuals, for at most `budget` ms (< 0: all that are left, 0: one). True when all are read.
 bool CRender::kt_chunk_visuals(kt_ahead_state& A, float budget)
 {
 	if (A.visuals_done) return true;
@@ -697,9 +698,13 @@ bool CRender::kt_chunk_visuals(kt_ahead_state& A, float budget)
 	timer.Start();
 	if (!A.steps) kt_kinds_reset();
 	kt_ahead_enter(A);
-	IReader* chunk = A.fs->open_chunk(fsL_VISUALS);
-	A.visuals_done = kt_LoadVisuals(chunk, A.index, budget);
-	chunk->close();
+	if (!A.visuals) A.visuals = A.fs->open_chunk(fsL_VISUALS);
+	A.visuals_done = kt_LoadVisuals(A.visuals, A.index, budget);
+	if (A.visuals_done)
+	{
+		A.visuals->close();
+		A.visuals = nullptr;
+	}
 	kt_ahead_leave(A);
 	A.ms_visuals += timer.GetElapsed_ms();
 	A.steps++;
@@ -713,7 +718,7 @@ bool CRender::kt_chunk_visuals(kt_ahead_state& A, float budget)
 
 void CRender::kt_chunk_end(kt_ahead_state& A)
 {
-	kt_chunk_visuals(A, 0.f);
+	kt_chunk_visuals(A, -1.f);
 	CTimer kt_stage;
 	kt_stage.Start();
 	const u32 piece = A.piece;
@@ -782,7 +787,7 @@ void CRender::kt_chunk_end(kt_ahead_state& A)
 // all its visuals are read; kt_piece_render / kt_base_render end it then in a moment.
 bool CRender::kt_piece_ahead(u32 piece)
 {
-	const float budget = 4.f;
+	const float budget = g_kt_chunk.ahead_budget; // -kt_ahead_budget, console kt_ahead_budget; 0: one visual a frame
 	if (piece == u32(-1)) return kt_base_ahead(budget);
 	kt_ahead_state* A = kt_ahead_of(piece);
 	if (!A)
@@ -796,7 +801,12 @@ bool CRender::kt_piece_ahead(u32 piece)
 	return kt_chunk_visuals(*A, budget);
 }
 
-// LoadVisuals from `index` on, for at most `budget` ms (0: to the end). True when the end is reached.
+// LoadVisuals from `index` on, for at most `budget` ms (< 0: to the end; 0: one visual). True when the
+// end is reached. `fs` is the same reader of the visuals' list from the first step to the last, and the
+// visuals are asked for strictly one after another: find_chunk then finds the next where the previous
+// ended. A reader opened anew searched from the start, and for a visual numbered 2064..2079 the scan
+// took the chunks before it for broken THM (the game's own fix in find_chunk for ids 0x810..0x81f),
+// "fixed" their sizes and ran out of the file: the crash at a neighbour's coming (2026-10-23/24).
 bool CRender::kt_LoadVisuals(IReader* fs, u32& index, float budget)
 {
 	CTimer timer;
@@ -821,13 +831,8 @@ bool CRender::kt_LoadVisuals(IReader* fs, u32& index, float budget)
 		}
 		chunk->close();
 		index++;
-		if (budget > 0.f && timer.GetElapsed_sec() * 1000.f >= budget)
-		{
-			IReader* next = fs->open_chunk(index);
-			if (!next) return true;
-			next->close();
-			return false;
-		}
+		if (budget == 0.f || (budget > 0.f && timer.GetElapsed_sec() * 1000.f >= budget)) return false; // the end is found next time
+
 	}
 	return true;
 }
@@ -837,6 +842,7 @@ void CRender::kt_ahead_drop()
 	// the level unloads with pieces half read: what of them is in the containers goes with them
 	for (u32 i = 0; i < kt_ahead.size(); i++)
 	{
+		if (kt_ahead[i]->visuals) kt_ahead[i]->visuals->close();
 		FS.r_close(kt_ahead[i]->fs);
 		xr_delete(kt_ahead[i]);
 	}
@@ -943,7 +949,7 @@ void CRender::kt_base_render(bool on)
 		return;
 	}
 	if (kt_base_on) return;
-	kt_base_ahead(0.f); // whatever is not read ahead yet
+	kt_base_ahead(-1.f); // whatever is not read ahead yet
 	CTimer kt_stage;
 	kt_stage.Start();
 	IReader* fs = kt_base_st.fs;
@@ -986,6 +992,7 @@ bool CRender::kt_base_ahead(float budget)
 		if (staged) staged->level = nullptr;
 		R_ASSERT2(fs, "kt: the level file");
 		B.index = 0;
+		B.visuals = nullptr;
 		B.done = false;
 		B.steps = 0;
 		B.ms_visuals = 0;
@@ -1063,9 +1070,13 @@ bool CRender::kt_base_ahead(float budget)
 	if (!B.steps) kt_kinds_reset();
 	kt_all_cut.swap(B.all_cut);
 	kt_base_reading = true;
-	IReader* chunk = B.fs->open_chunk(fsL_VISUALS);
-	B.done = kt_LoadVisuals(chunk, B.index, budget);
-	chunk->close();
+	if (!B.visuals) B.visuals = B.fs->open_chunk(fsL_VISUALS); // one reader to the end (kt_LoadVisuals)
+	B.done = kt_LoadVisuals(B.visuals, B.index, budget);
+	if (B.done)
+	{
+		B.visuals->close();
+		B.visuals = nullptr;
+	}
 	kt_base_reading = false;
 	kt_all_cut.swap(B.all_cut);
 	B.ms_visuals += timer.GetElapsed_ms();
@@ -1076,6 +1087,8 @@ bool CRender::kt_base_ahead(float budget)
 
 void CRender::kt_base_ahead_reset()
 {
+	if (kt_base_st.visuals) kt_base_st.visuals->close();
+	kt_base_st.visuals = nullptr;
 	if (kt_base_st.fs) FS.r_close(kt_base_st.fs);
 	kt_base_st.fs = nullptr;
 	kt_base_st.done = false;

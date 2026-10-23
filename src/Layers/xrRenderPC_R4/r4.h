@@ -215,6 +215,7 @@ public:
 		u32 piece;
 		IReader* fs;
 		u32 index; // the next visual to read
+		IReader* visuals; // the visuals' list, the same reader from the first step to the last
 		bool visuals_done;
 		u32 shader0, shader1, visual0, visual1, vb0, vb1, ib0, ib1, xvb0, xvb1, xib0, xib1;
 		xr_vector<FSlideWindowItem>* swis;
@@ -242,6 +243,7 @@ public:
 	struct kt_base_state
 	{
 		IReader* fs;
+		IReader* visuals;
 		u32 index;
 		bool done;
 		xr_vector<std::pair<u32, u32> > all_cut;

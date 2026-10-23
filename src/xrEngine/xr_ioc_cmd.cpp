@@ -1050,6 +1050,9 @@ void CCC_Register()
 	CMD1(CCC_Start, "start");
 	CMD1(CCC_Disconnect, "disconnect");
 	CMD1(CCC_KtPiece, "kt_piece");
+	// a neighbour's visuals read ahead, ms a frame; 0 - one visual a frame, every one at the edge of a step
+	// (world_test.py swaps)
+	CMD4(CCC_Float, "kt_ahead_budget", &g_kt_chunk.ahead_budget, 0.f, 100.f);
 	CMD1(CCC_SaveCFG, "cfg_save");
 	CMD1(CCC_LoadCFG, "cfg_load");
 
