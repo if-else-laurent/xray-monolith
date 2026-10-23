@@ -196,6 +196,25 @@ void CUIZoneMap::UpdateRadar(Fvector pos)
 	m_activeMap->SetActivePoint(pos);
 }
 
+// seamless world (kt), the probe of #191: pixels from the centre of the minimap's circle to where the
+// map puts the actor (its heading pivot) - spots and the task pointer stand around that point; 0 0 when
+// the map follows him. Then 1 when the actor is within the map's bound rect, and the map's level.
+shared_str CUIZoneMap::kt_probe()
+{
+	Frect map_abs;
+	m_activeMap->GetAbsoluteRect(map_abs);
+	Fvector2 actor = m_activeMap->GetStaticItem()->GetHeadingPivot();
+	actor.add(map_abs.lt);
+	Fvector2 centre;
+	m_activeMap->WorkingArea().getcenter(centre);
+	Fvector p = Device.vCameraPosition;
+	p.sub(Level().kt_level_offset(*m_kt_location));
+	const bool inside = !!m_activeMap->BoundRect().in(Fvector2().set(p.x, p.z));
+	string256 s;
+	xr_sprintf(s, "%.1f %.1f %d %s", actor.x - centre.x, actor.y - centre.y, inside ? 1 : 0, m_kt_location.c_str());
+	return shared_str(s);
+}
+
 bool CUIZoneMap::ZoomIn()
 {
 	return true;

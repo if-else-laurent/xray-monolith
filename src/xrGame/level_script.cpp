@@ -39,6 +39,7 @@
 #include "xrServer_Objects_ALife_Monsters.h"
 #include "hudmanager.h"
 #include "ui\UIMainIngameWnd.h"
+#include "UIZoneMap.h"
 #include "ui\UIHudStatesWnd.h"
 #include "raypick.h"
 #include "../xrcdb/xr_collide_defs.h"
@@ -538,6 +539,16 @@ bool kt_in_world(u32 level_id)
 float kt_location_depth()
 {
 	return g_kt_chunk.active ? g_kt_chunk.location_depth : 0.f;
+}
+
+// The minimap's probe (#191): "dx dy inside location" - see CUIZoneMap::kt_probe; empty without the HUD.
+LPCSTR kt_minimap()
+{
+	static shared_str s;
+	if (!CurrentGameUI() || !CurrentGameUI()->UIMainIngameWnd || !CurrentGameUI()->UIMainIngameWnd->UIZoneMap)
+		return "";
+	s = CurrentGameUI()->UIMainIngameWnd->UIZoneMap->kt_probe();
+	return s.c_str();
 }
 
 void prefetch_sound(LPCSTR name)
@@ -2543,6 +2554,7 @@ void CLevel::script_register(lua_State* L)
 			def("name", get_name),
 			def("kt_in_world", kt_in_world),
 			def("kt_location_depth", kt_location_depth),
+			def("kt_minimap", kt_minimap),
 			def("prefetch_sound", prefetch_sound),
 
 			def("client_spawn_manager", get_client_spawn_manager),

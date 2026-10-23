@@ -41,6 +41,7 @@ public:
 	CUIWindow& MapFrame() { return m_clipFrame; };
 	void SetupCurrentMap();
 	shared_str m_kt_location; // seamless world (kt): the level whose map is shown
+	shared_str kt_probe(); // seamless world (kt): where the map puts the actor, see the .cpp
 	void OnSectorChanged(int sector);
 	void Counter_ResetClrAnimation();
 
