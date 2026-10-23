@@ -583,7 +583,7 @@ void IGame_Level::kt_stream_tick()
 			kt_stream_state = 2;
 		});
 		// beside it: the geometry buffers of the pieces on their way in (and of the level itself) read and
-		// made, the main thread only puts them in place; the level file it still reads into the system's cache
+		// made, and their level files read whole; the main thread only puts them in place
 		kt_stage_state = 1;
 		kt_stage_task.run([]()
 		{
@@ -591,17 +591,7 @@ void IGame_Level::kt_stream_tick()
 			{
 				const KtPiece& P = g_kt_chunk.pieces[kt_stream_job[n].piece];
 				if (P.loaded) continue;
-				Render->kt_piece_stage(kt_stream_job[n].piece);
-				string_path file;
-				FS.update_path(file, "$game_levels$", P.name);
-				xr_strcat(file, "\\level");
-				if (!FS.exist(file)) continue;
-				IReader* R = FS.r_open(file);
-				if (!R) continue;
-				const u8* data = (const u8*)R->pointer();
-				volatile u32 sum = 0;
-				for (int at = 0, size = R->length(); at < size; at += 4096) sum += data[at];
-				FS.r_close(R);
+				Render->kt_piece_stage(kt_stream_job[n].piece); // its level file too: read whole, handed over
 			}
 			if (kt_stream_job_base && !g_kt_chunk.base_loaded) Render->kt_piece_stage(u32(-1));
 			kt_stage_ready_ms = kt_stream_timer.GetElapsed_ms();

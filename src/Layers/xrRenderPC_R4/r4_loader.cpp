@@ -1197,6 +1197,28 @@ void CRender::kt_prepare_reset()
 // a piece's geometry buffers read and made into a list of their own. Nothing of the containers the
 // frame draws from is touched; the main thread only puts the buffers in place (kt_LoadChunk,
 // kt_base_render). D3D11 makes buffers on any thread; the textures are made on worker threads already.
+// kt: a level file read on the streaming thread into memory of its own, for the main thread to read the
+// visuals and sectors from. Handing over the reader FS gave (a view of the file mapped) and opening the same
+// file again on that thread spoiled the memory of the first under Wine: the main thread read garbage from
+// it and from the textures' descriptions, then failed in find_chunk (2026-10-23, build 98200856).
+struct kt_owned_reader : public IReader
+{
+	void* owned;
+	kt_owned_reader(void* data, int size) : IReader(data, size, 0), owned(data) {}
+	virtual ~kt_owned_reader() { xr_free(owned); }
+};
+
+static IReader* kt_read_whole(LPCSTR file)
+{
+	IReader* R = FS.r_open(file);
+	if (!R) return nullptr;
+	const int size = R->length();
+	void* copy = xr_malloc(size ? size : 1);
+	CopyMemory(copy, R->pointer(), size);
+	FS.r_close(R);
+	return xr_new<kt_owned_reader>(copy, size);
+}
+
 void CRender::kt_piece_stage(u32 piece)
 {
 	const bool own = piece == u32(-1);
@@ -1225,7 +1247,7 @@ void CRender::kt_piece_stage(u32 piece)
 		}
 	}
 	strconcat(sizeof(file), file, dir, "level");
-	IReader* fs = FS.r_open(file);
+	IReader* fs = kt_read_whole(file);
 	if (!fs)
 	{
 		Msg("! [kt chunk] cannot open %s to read ahead", file);
