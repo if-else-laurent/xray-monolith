@@ -363,6 +363,28 @@ void CRenderDevice::on_idle()
 
 	PROF_FRAME("Main Thread");
 
+	// kt: a long frame told by its stages (KtFrameCost, -kt_frame_log)
+	{
+		static CTimer kt_frame_timer;
+		static bool kt_frame_started = false;
+		if (!g_kt_frame.main_thread) g_kt_frame.main_thread = GetCurrentThreadId();
+		const float frame_ms = kt_frame_started ? kt_frame_timer.GetElapsed_sec() * 1000.f : 0.f;
+		kt_frame_timer.Start();
+		kt_frame_started = true;
+		if (g_kt_frame.log_ms > 0.f && frame_ms > g_kt_frame.log_ms && g_pGameLevel && g_loading_events.empty())
+		{
+			const KtFrameCost& C = g_kt_frame;
+			string128 worst = "";
+			if (C.worst_spawn[0]) xr_sprintf(worst, ", dearest %s %.0f", C.worst_spawn, C.worst_spawn_ms);
+			Msg("* [kt frame] %u: %.0f ms - logic %.0f (stream %.0f, server %.0f, online %.0f x%u%s, offline %.0f x%u, models %.0f x%u, textures %.0f x%u, lua gc %.0f), render %.0f, wait %.0f",
+			    dwFrame, frame_ms, C.ms[KtFrameCost::logic], C.ms[KtFrameCost::stream], C.ms[KtFrameCost::server],
+			    C.ms[KtFrameCost::spawn], C.n[KtFrameCost::spawn], worst, C.ms[KtFrameCost::destroy], C.n[KtFrameCost::destroy],
+			    C.ms[KtFrameCost::models], C.n[KtFrameCost::models], C.ms[KtFrameCost::textures], C.n[KtFrameCost::textures],
+			    C.ms[KtFrameCost::lua_gc], C.ms[KtFrameCost::render], C.ms[KtFrameCost::wait]);
+		}
+		g_kt_frame.reset();
+	}
+
 #ifdef DEDICATED_SERVER
     u32 FrameStartTime = TimerGlobal.GetElapsed_ms();
 #endif
@@ -404,7 +426,10 @@ void CRenderDevice::on_idle()
 		Device.seqParallelBeforRender.clear();
 	}
 
-	FrameMove();
+	{
+		KtFrameScope kt_cost(KtFrameCost::logic);
+		FrameMove();
+	}
 
     if (g_pGamePersistent != nullptr)
     {
@@ -525,6 +550,7 @@ void CRenderDevice::on_idle()
 	Statistic->RenderTOTAL_Real.FrameStart();
 	Statistic->RenderTOTAL_Real.Begin();
 
+	KtFrameScope* kt_render_cost = xr_new<KtFrameScope>(KtFrameCost::render);
 	if (b_is_Active && Begin())
 	{
 		START_PROFILE("Process seqRender");
@@ -539,13 +565,17 @@ void CRenderDevice::on_idle()
 
 		End();
 	}
+	xr_delete(kt_render_cost);
 	Statistic->RenderTOTAL_Real.End();
 	Statistic->RenderTOTAL_Real.FrameEnd();
 	Statistic->RenderTOTAL.accum = Statistic->RenderTOTAL_Real.accum;
 #endif 
 	Device.isRendering = false;
 
-	secondary_tasks.wait();
+	{
+		KtFrameScope kt_cost(KtFrameCost::wait);
+		secondary_tasks.wait();
+	}
 
 	if (psLua_ParallelGC_debug && psLua_ParallelGC && Device.LuaGCDebug)
 	{

@@ -16,6 +16,22 @@ void CLevel::cl_Process_Spawn(NET_Packet& P)
 	shared_str s_name;
 	P.r_stringZ(s_name);
 	PROF_EVENT("CLevel::cl_Process_Spawn");
+	// kt: what each object costs the frame it goes online in (KtFrameCost)
+	struct kt_spawn_cost
+	{
+		KtFrameScope scope;
+		LPCSTR name;
+		kt_spawn_cost(LPCSTR n) : scope(KtFrameCost::spawn), name(n) {}
+		~kt_spawn_cost()
+		{
+			const float ms = scope.elapsed_ms();
+			if (scope.on && ms > g_kt_frame.worst_spawn_ms)
+			{
+				g_kt_frame.worst_spawn_ms = ms;
+				xr_strcpy(g_kt_frame.worst_spawn, name);
+			}
+		}
+	} kt_cost(s_name.c_str());
 
 	//Msg("cl_Process_Spawn spawning %s", s_name.c_str());
 

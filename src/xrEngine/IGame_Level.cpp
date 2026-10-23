@@ -18,6 +18,7 @@
 
 ENGINE_API IGame_Level* g_pGameLevel = NULL;
 ENGINE_API KtChunk g_kt_chunk;
+ENGINE_API KtFrameCost g_kt_frame;
 
 // Reads -kt_chunk <level>,<x>,<y>,<z> and checks that the level has what is needed.
 // The keys do not change while the game runs, and the AI map is read on another thread at the same
@@ -231,6 +232,9 @@ static void kt_chunk_setup()
 			g_kt_chunk.ground_materials.push_back(u32(atoi(_GetItem(list, i, item))));
 		}
 	}
+	g_kt_frame.log_ms = 50.f;
+	if (LPCSTR k = strstr(params, "-kt_frame_log ")) sscanf(k + 14, "%f", &g_kt_frame.log_ms);
+	if (g_kt_frame.log_ms > 0.f) Msg("* [kt frame] frames longer than %.0f ms are told to the log by stages", g_kt_frame.log_ms);
 	if (LPCSTR k = strstr(params, "-kt_static_radius "))
 	{
 		sscanf(k + 18, "%f", &g_kt_chunk.static_radius);
@@ -797,7 +801,10 @@ void IGame_Level::OnRender()
 void IGame_Level::OnFrame()
 {
 	PROF_EVENT("IGame_Level::OnFrame");
-	kt_stream_tick();
+	{
+		KtFrameScope kt_cost(KtFrameCost::stream);
+		kt_stream_tick();
+	}
 	// Log ("- level:on-frame: ",u32(Device.dwFrame));
 	// if (_abs(Device.fTimeDelta)<EPS_S) return;
 

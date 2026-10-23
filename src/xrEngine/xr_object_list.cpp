@@ -281,6 +281,7 @@ void CObjectList::ProcessDestroyQueueImpl(Objects& queue)
     if (!queue.empty())
     {
         PROF_EVENT("CObjectList::Update/destroy_queue");
+        KtFrameScope kt_cost(KtFrameCost::destroy); // kt: objects going offline (KtFrameCost)
         for (int it = queue.size() - 1; it >= 0; it--)
         {
             auto obj = queue[it];

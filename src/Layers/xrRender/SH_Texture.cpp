@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #pragma hdrstop
+#include "../../xrEngine/IGame_Level.h"
 
 #include "ResourceManager.h"
 
@@ -185,6 +186,7 @@ void CTexture::Load()
 {
 	PROF_EVENT("CTexture::Load");
 	if (flags.bLoaded || flags.bLoading) return;
+	KtFrameScope kt_cost(KtFrameCost::textures); // seamless world experiment (kt): a texture read on the main thread
 	flags.bLoading = true;
 	flags.bLoaded = false;
 	desc_cache = 0;

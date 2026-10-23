@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #pragma hdrstop
+#include "../../xrEngine/IGame_Level.h"
 
 #include "ModelPool.h"
 
@@ -101,6 +102,7 @@ dxRender_Visual* CModelPool::Instance_Duplicate(dxRender_Visual* V)
 
 dxRender_Visual* CModelPool::Instance_Load(const char* N, BOOL allow_register, bool assert)
 {
+	KtFrameScope kt_cost(KtFrameCost::models); // seamless world experiment (kt): a model read on the main thread
 	dxRender_Visual* V;
 	string_path fn;
 	string_path name;

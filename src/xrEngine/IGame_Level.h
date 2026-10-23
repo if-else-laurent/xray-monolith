@@ -349,6 +349,52 @@ struct ENGINE_API KtChunk
 };
 
 extern ENGINE_API KtChunk g_kt_chunk;
+
+// Seamless world experiment (kt): what a frame of the main thread went on. Every frame longer than
+// `log_ms` (-kt_frame_log <ms>, 50 with the world keys, 0 off) is told to the log by stages, so a
+// stall at a seam is seen by its parts. Counted on the main thread only; a stage inside another
+// (models inside spawn) is counted in both.
+struct ENGINE_API KtFrameCost
+{
+	enum Stage { logic, stream, server, spawn, destroy, models, textures, lua_gc, render, wait, stage_count };
+	float ms[stage_count];
+	u32 n[stage_count];
+	DWORD main_thread;
+	float log_ms;
+	float worst_spawn_ms; // the dearest single object that went online this frame
+	string64 worst_spawn;
+	bool on_main() const { return main_thread && GetCurrentThreadId() == main_thread; }
+	void add(Stage s, float t)
+	{
+		ms[s] += t;
+		n[s]++;
+	}
+	void reset()
+	{
+		ZeroMemory(ms, sizeof(ms));
+		ZeroMemory(n, sizeof(n));
+		worst_spawn_ms = 0.f;
+		worst_spawn[0] = 0;
+	}
+	KtFrameCost() : main_thread(0), log_ms(0.f) { reset(); }
+};
+extern ENGINE_API KtFrameCost g_kt_frame;
+
+struct KtFrameScope
+{
+	KtFrameCost::Stage stage;
+	bool on;
+	CTimer timer;
+	KtFrameScope(KtFrameCost::Stage s) : stage(s), on(g_kt_frame.log_ms > 0.f && g_kt_frame.on_main())
+	{
+		if (on) timer.Start();
+	}
+	float elapsed_ms() const { return on ? timer.GetElapsed_sec() * 1000.f : 0.f; }
+	~KtFrameScope()
+	{
+		if (on) g_kt_frame.add(stage, timer.GetElapsed_sec() * 1000.f);
+	}
+};
 // Is the chunk to be added to the level that is being loaded now. Reads the keys on the first call.
 // The AI map is read on its own thread next to the level, so it asks by itself and does not look at
 // g_kt_chunk.active, which the level sets for the rest of the game.

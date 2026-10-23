@@ -335,6 +335,7 @@ void CLevel::net_Update()
 	if (Server && OnServer())
 	{
 		Device.Statistic->netServer.Begin();
+		KtFrameScope kt_cost(KtFrameCost::server); // kt: A-Life's update, its switches online and offline
 		Server->Update();
 		Device.Statistic->netServer.End();
 	}
