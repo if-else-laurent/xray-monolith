@@ -7,6 +7,7 @@
 ////////////////////////////////////////////////////////////////////////////
 
 #include "stdafx.h"
+#include "../xrEngine/IGame_Level.h"
 #include "alife_simulator_base.h"
 #include "relation_registry.h"
 #include "alife_registry_wrappers.h"
@@ -74,10 +75,23 @@ void CALifeSimulatorBase::unregister_object(CSE_ALifeDynamicObject* object, bool
 		graph().remove(object, object->m_tGraphID);
 		scheduled().remove(object);
 	}
-	else if (object->ID_Parent == 0xffff)
+	else
 	{
-		//			if (object->used_ai_locations())
-		graph().level().remove(object, !object->used_ai_locations());
+		if (object->ID_Parent == 0xffff)
+		{
+			//			if (object->used_ai_locations())
+			graph().level().remove(object, !object->used_ai_locations());
+		}
+		// Seamless world experiment (kt): an object online is never on the schedule of A-Life, so the
+		// game does not take it off there. One that got there all the same stayed on it deleted, and
+		// the schedule called it: "pure virtual function call" in update_scheduled (soak of v0.0.5,
+		// 2026-10-23). Taken off, and said: what put it there is a defect to find.
+		if (g_kt_chunk.active && scheduled().object(object->ID, true))
+		{
+			Msg("! [kt alife] %s (%s, id %d) released online while on the schedule of A-Life: taken off it",
+			    object->name_replace(), *object->s_name, object->ID);
+			scheduled().remove(object, true);
+		}
 	}
 }
 

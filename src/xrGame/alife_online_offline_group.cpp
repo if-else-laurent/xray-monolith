@@ -189,9 +189,15 @@ bool CSE_ALifeOnlineOfflineGroup::synchronize_location()
 		// with, and the squad copied them. On one level nobody noticed; in the world a squad that
 		// walked over a seam stayed "on the level it came from" for scripts and for the map.
 		// Only in the world: without its keys the squad copies its first member as in the game.
+		// Only the members that are online: for one offline synchronize_location moves it from one
+		// vertex of the world graph to the next by the graph's registry (change), and that puts it
+		// on the level's list - a member nobody but its squad may switch was then tried online on
+		// its own, put on the schedule of A-Life, brought online with the squad's registries
+		// (kt_bring_members_online) and released online still on the schedule: the schedule
+		// called a deleted object, "pure virtual function call" (soak of v0.0.5, 2026-10-23).
 		if (g_kt_chunk.active)
 			for (MEMBERS::iterator I = m_members.begin(); I != m_members.end(); ++I)
-				if (ai().level_graph().valid_vertex_id((*I).second->m_tNodeID))
+				if ((*I).second->m_bOnline && ai().level_graph().valid_vertex_id((*I).second->m_tNodeID))
 					(*I).second->CSE_ALifeDynamicObject::synchronize_location();
 
 		MEMBER* member = (*m_members.begin()).second;
@@ -266,7 +272,15 @@ static void kt_bring_members_online(CSE_ALifeOnlineOfflineGroup* squad)
 		if (member->m_bOnline || kt_land_absent(member))
 			continue;
 		Msg("* [kt alife] %s: member %s of the online squad is offline, brought online", squad->name_replace(), member->name_replace());
-		squad->alife().add_online(member, false);
+		// as register_member brings an offline member into an online squad: off the schedule and
+		// the graph (switch_online), off the level's list. add_online(member, false), as the squad's
+		// own switch_online does for members that were never anywhere but in the squad, left one
+		// that had got onto the schedule there while online - and its release left the schedule a
+		// deleted object (soak of v0.0.5, "pure virtual function call")
+		if (squad->alife().scheduled().object(member->ID, true))
+			Msg("! [kt alife] %s: member %s of the online squad was on the schedule of A-Life while offline", squad->name_replace(), member->name_replace());
+		member->switch_online();
+		squad->alife().graph().level().remove(member, true);
 	}
 }
 
