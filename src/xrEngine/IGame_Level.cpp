@@ -617,7 +617,10 @@ void IGame_Level::kt_stream_tick()
 	timer.Start();
 	ObjectSpace.kt_SwapStatic(*kt_fresh);
 	const u32 swap_ms = timer.GetElapsed_ms();
-	xr_delete(kt_fresh); // the model that served until now
+	// the model that served until now is freed aside (up to 35 ms of the main thread)
+	CDB::MODEL* kt_old = kt_fresh;
+	kt_fresh = nullptr;
+	kt_stream_task.run([kt_old]() { CDB::MODEL* model = kt_old; xr_delete(model); });
 	const u32 freed_ms = timer.GetElapsed_ms();
 
 	xr_vector<u8> stays(pieces.size(), 0);
