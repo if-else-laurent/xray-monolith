@@ -3,6 +3,10 @@
 #include "hudtarget.h"
 #include "actor.h"
 #include "../xrEngine/igame_level.h"
+#include "ui_defs.h"
+#include "../Include/xrRender/UIRender.h"
+#include "../xrEngine/render.h"
+#include "ui_base.h"
 #include "../xrEngine/xr_input.h"
 #include "../xrEngine/gamemtllib.h"
 #include "MainMenu.h"
@@ -304,6 +308,64 @@ void CHUDManager::RenderCamAttachedUI()
 
 extern ENGINE_API BOOL bShowPauseString;
 //отрисовка элементов интерфейса
+// Seamless world experiment (kt): the loader icon in the top right corner while something of the world is
+// on its way (KtChunk::busy). Twelve spokes, one bright running round; drawn with the crosshair's
+// shader (colour only), whatever the HUD shows, over it (CLevel::OnRender, after the HUD). A short busy
+// moment still shows it for a while.
+static ui_shader kt_icon_shader;
+void kt_render_loader_icon()
+{
+	if (!g_kt_chunk.active || !g_kt_chunk.icon || g_kt_chunk.busy_time < 0.f) return;
+	const float since = Device.fTimeGlobal - g_kt_chunk.busy_time;
+	const float hold = 0.4f;
+	if (since > hold) return;
+	if (!kt_icon_shader->inited()) kt_icon_shader->create("hud\\crosshair");
+	static float kt_icon_seen = -10.f;
+	if (Device.fTimeGlobal - kt_icon_seen > hold + .1f)
+		Msg("* [kt icon] shown at frame %u", Device.dwFrame);
+	kt_icon_seen = Device.fTimeGlobal;
+	const float w = float(::Render->getTarget()->get_width()), h = float(::Render->getTarget()->get_height());
+	const float s = h / 768.f;
+	const float cx = w - 44.f * s, cy = 44.f * s;
+	const float r0 = 9.f * s, r1 = 20.f * s, half = 2.2f * s;
+	const u32 spokes = 12;
+	const float fade = since < hold - .15f ? 1.f : (hold - since) / .15f;
+	const u32 lead = u32(Device.fTimeGlobal * 12.f) % spokes;
+	UIRender->SetShader(*kt_icon_shader);
+	if (g_kt_chunk.held)
+	{
+		// the actor is held until the land under him comes: the world behind is darkened, a loading screen of sorts
+		const u32 dark = color_rgba(0, 0, 0, 215);
+		UIRender->StartPrimitive(6, IUIRender::ptTriList, UI().m_currentPointType);
+		UIRender->PushPoint(0, 0, 0, dark, 0, 0);
+		UIRender->PushPoint(w, 0, 0, dark, 0, 0);
+		UIRender->PushPoint(w, h, 0, dark, 0, 0);
+		UIRender->PushPoint(0, 0, 0, dark, 0, 0);
+		UIRender->PushPoint(w, h, 0, dark, 0, 0);
+		UIRender->PushPoint(0, h, 0, dark, 0, 0);
+		UIRender->FlushPrimitive();
+	}
+	UIRender->StartPrimitive(spokes * 6, IUIRender::ptTriList, UI().m_currentPointType);
+	for (u32 k = 0; k < spokes; k++)
+	{
+		const float a = PI_MUL_2 * float(k) / float(spokes);
+		const float dx = _sin(a), dy = -_cos(a);
+		const float nx = -dy * half, ny = dx * half;
+		const u32 behind = (lead + spokes - k) % spokes;
+		const u32 alpha = u32(fade * (60.f + 195.f * float(spokes - behind) / float(spokes)));
+		const u32 c = color_rgba(235, 235, 225, alpha);
+		const float ax = cx + dx * r0, ay = cy + dy * r0, bx = cx + dx * r1, by = cy + dy * r1;
+		UIRender->PushPoint(ax - nx, ay - ny, 0, c, 0, 0);
+		UIRender->PushPoint(bx - nx, by - ny, 0, c, 0, 0);
+		UIRender->PushPoint(bx + nx, by + ny, 0, c, 0, 0);
+		UIRender->PushPoint(ax - nx, ay - ny, 0, c, 0, 0);
+		UIRender->PushPoint(bx + nx, by + ny, 0, c, 0, 0);
+		UIRender->PushPoint(ax + nx, ay + ny, 0, c, 0, 0);
+	}
+	UIRender->SetShader(*kt_icon_shader);
+	UIRender->FlushPrimitive();
+}
+
 void CHUDManager::RenderUI()
 {
 	PROF_EVENT("CHUDManager::RenderUI");

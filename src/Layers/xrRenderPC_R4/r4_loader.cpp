@@ -159,6 +159,8 @@ void CRender::level_Unload()
 
 	//*** Details
 	Details->Unload();
+	kt_stage_drop(); // kt: buffers read ahead for a piece that did not come in
+	kt_prepare_reset();
 
 	//*** Sectors
 	// 1.
@@ -253,12 +255,15 @@ static u32 kt_cut_total = 0;
 void CRender::LoadBuffers(CStreamReader* base_fs, BOOL _alternative)
 {
 	R_ASSERT2(base_fs, "Could not load geometry. File not found.");
-	dxRenderDeviceRender::Instance().Resources->Evict();
+	// kt: read ahead on the streaming thread, the buffers go to a list of their own (kt_piece_stage)
+	kt_staged* staged = kt_staging() ? kt_stage_into : nullptr;
+	if (!staged) dxRenderDeviceRender::Instance().Resources->Evict();
 	//	u32	dwUsage					= D3DUSAGE_WRITEONLY;
 
-	xr_vector<VertexDeclarator>& _DC = _alternative ? xDC : nDC;
-	xr_vector<ID3DVertexBuffer*>& _VB = _alternative ? xVB : nVB;
-	xr_vector<ID3DIndexBuffer*>& _IB = _alternative ? xIB : nIB;
+	xr_vector<VertexDeclarator>& _DC = staged ? (_alternative ? staged->xDC : staged->nDC) : (_alternative ? xDC : nDC);
+	xr_vector<ID3DVertexBuffer*>& _VB = staged ? (_alternative ? staged->xVB : staged->nVB) : (_alternative ? xVB : nVB);
+	xr_vector<ID3DIndexBuffer*>& _IB = staged ? (_alternative ? staged->xIB : staged->nIB) : (_alternative ? xIB : nIB);
+	xr_vector<std::pair<u32, u32> >& all_cut = staged ? staged->all_cut : kt_all_cut;
 
 	// Vertex buffers
 	{
@@ -391,7 +396,7 @@ void CRender::LoadBuffers(CStreamReader* base_fs, BOOL _alternative)
 				}
 				kt_cut_total += dropped;
 				// a visual whose every triangle went is not to be drawn at all: empty, it still cost a draw
-				if (!_alternative && R.icount >= 3 && dropped * 3 == R.icount) kt_all_cut.push_back(std::make_pair(R.ib, R.ibase));
+				if (!_alternative && R.icount >= 3 && dropped * 3 == R.icount) all_cut.push_back(std::make_pair(R.ib, R.ibase));
 			}
 			dx10BufferUtils::CreateIndexBuffer(&_IB[i], pData, iCount * 2);
 			xr_free(pData);
@@ -402,7 +407,7 @@ void CRender::LoadBuffers(CStreamReader* base_fs, BOOL _alternative)
 	}
 	for (u32 n = 0; n < kt_kept.size(); n++) xr_free(kt_kept[n].data);
 	kt_kept.clear();
-	if (kt_cut_total) Msg("* [kt chunk] cut: %u triangles are not drawn (%s buffers); visuals left without a triangle so far: %u", kt_cut_total, _alternative ? "fast" : "main", u32(kt_all_cut.size()));
+	if (kt_cut_total) Msg("* [kt chunk] cut: %u triangles are not drawn (%s buffers); visuals left without a triangle so far: %u", kt_cut_total, _alternative ? "fast" : "main", u32(all_cut.size()));
 	kt_cut_total = 0;
 }
 
@@ -450,7 +455,8 @@ void CRender::kt_LocalScan(IReader* fs)
 void CRender::kt_CutScan(IReader* fs)
 {
 	kt_cut_ranges.clear();
-	kt_all_cut.clear();
+	kt_staged* staged = kt_staging() ? kt_stage_into : nullptr;
+	(staged ? staged->all_cut : kt_all_cut).clear();
 	const bool masked = g_kt_chunk.reading() < g_kt_chunk.mask_pieces && !g_kt_chunk.mask.empty();
 	if ((g_kt_chunk.cuts.empty() && !masked) || !fs) return;
 	IReader* V = 0;
@@ -479,8 +485,9 @@ void CRender::kt_CutScan(IReader* fs)
 			if (touched)
 			{
 				kt_cut_range R;
-				const u32 shader = u32(H.shader_id) + (g_kt_chunk.loading ? kt_base_shader : 0);
-				R.strict = shader < kt_screen.size() ? kt_screen[shader] : 0; // 1 - a screen, 2 - the terrain
+				const u32 shader = u32(H.shader_id) + ((g_kt_chunk.loading && !staged) ? kt_base_shader : 0);
+				const xr_vector<u8>& screen = staged && g_kt_chunk.loading ? staged->screen : kt_screen;
+				R.strict = shader < screen.size() ? screen[shader] : 0; // 1 - a screen, 2 - the terrain
 				if (V->find_chunk(OGF_GCONTAINER))
 				{
 					R.alt = 0;
@@ -545,17 +552,40 @@ void CRender::kt_LoadChunk(u32 piece)
 		const u32 count = u32(names.size());
 		Shaders.resize(kt_base_shader + count);
 		if (kt_screen.size() < kt_base_shader + count) kt_screen.resize(kt_base_shader + count, 0);
+		// made ahead: taken as they are (making a shader again compiles it again before it is found)
+		xr_map<u32, xr_vector<ref_shader> >::iterator made = kt_prep_by_piece.find(piece);
+		const bool ahead = made != kt_prep_by_piece.end() && made->second.size() == count;
 		for (u32 i = 0; i < count; i++)
 		{
 			if (names[i].first.empty()) continue;
 			LPCSTR n_tlist = names[i].second.c_str();
-			Shaders[kt_base_shader + i] = dxRenderDeviceRender::Instance().Resources->Create(names[i].first.c_str(), n_tlist);
+			Shaders[kt_base_shader + i] = ahead && made->second[i] ? made->second[i] : dxRenderDeviceRender::Instance().Resources->Create(names[i].first.c_str(), n_tlist);
 			kt_screen[kt_base_shader + i] = (strstr(n_tlist, "prop_fake") || strstr(n_tlist, "fx_lavahell")) ? 1 : (strstr(n_tlist, "terrain\\") == n_tlist ? 2 : 0);
 		}
 	}
 
 	kt_ms_shaders = kt_stage.GetElapsed_ms();
-	// Geometry
+	// Geometry: read ahead on the streaming thread (kt_piece_stage) and only put in place here, or read now
+	if (kt_staged* S = kt_stage_take(piece))
+	{
+		const u32 nvb = u32(S->nVB.size()), xvb = u32(S->xVB.size()), nib = u32(S->nIB.size()), xib = u32(S->xIB.size());
+		if (nDC.size() < kt_base_vb + nvb) nDC.resize(kt_base_vb + nvb);
+		if (xDC.size() < kt_base_xvb + xvb) xDC.resize(kt_base_xvb + xvb);
+		nVB.resize(kt_base_vb + nvb); xVB.resize(kt_base_xvb + xvb);
+		nIB.resize(kt_base_ib + nib); xIB.resize(kt_base_xib + xib);
+		for (u32 i = 0; i < nvb; i++) { nDC[kt_base_vb + i] = S->nDC[i]; nVB[kt_base_vb + i] = S->nVB[i]; }
+		for (u32 i = 0; i < xvb; i++) { xDC[kt_base_xvb + i] = S->xDC[i]; xVB[kt_base_xvb + i] = S->xVB[i]; }
+		for (u32 i = 0; i < nib; i++) nIB[kt_base_ib + i] = S->nIB[i];
+		for (u32 i = 0; i < xib; i++) xIB[kt_base_xib + i] = S->xIB[i];
+		S->nVB.clear(); S->xVB.clear(); S->nIB.clear(); S->xIB.clear();
+		xr_delete(kt_SWIs.back());
+		kt_SWIs.back() = S->swis;
+		S->swis = nullptr;
+		kt_all_cut.swap(S->all_cut);
+		Msg("* [kt chunk] buffers of %s were read ahead in %u ms: VB %u, IB %u", g_kt_chunk.name, S->ms, nvb, nib);
+		kt_stage_free(S);
+	}
+	else
 	{
 		IReader* visuals = fs->open_chunk(fsL_VISUALS);
 		kt_CutScan(visuals);
@@ -754,8 +784,16 @@ void CRender::kt_base_render(bool on)
 	{
 		chunk = fs->open_chunk(fsL_SHADERS);
 		u32 count = chunk->r_u32();
+		xr_map<u32, xr_vector<ref_shader> >::iterator made = kt_prep_by_piece.find(u32(-1));
+		const bool ahead = made != kt_prep_by_piece.end() && made->second.size() == count;
 		for (u32 i = 0; i < count && i < kt_base.shaders; i++)
 		{
+			if (ahead && made->second[i])
+			{
+				chunk->skip_stringZ();
+				Shaders[i] = made->second[i];
+				continue;
+			}
 			string512 n_sh, n_tlist;
 			LPCSTR n = LPCSTR(chunk->pointer());
 			chunk->skip_stringZ();
@@ -769,21 +807,41 @@ void CRender::kt_base_render(bool on)
 		chunk->close();
 	}
 	kt_base_reading = true;
-	chunk = fs->open_chunk(fsL_VISUALS);
-	kt_CutScan(chunk);
-	chunk->close();
+	if (kt_staged* S = kt_stage_take(u32(-1)))
 	{
-		CStreamReader* geom = FS.rs_open("$level$", "level.geom");
-		R_ASSERT2(geom, "level.geom");
-		LoadBuffers(geom, FALSE);
-		LoadSWIs(geom);
-		FS.r_close(geom);
+		// read ahead on the streaming thread: back to the level's own places at the starts of the containers
+		const u32 nvb = u32(S->nVB.size()), xvb = u32(S->xVB.size()), nib = u32(S->nIB.size()), xib = u32(S->xIB.size());
+		R_ASSERT2(nvb <= nVB.size() && xvb <= xVB.size() && nib <= nIB.size() && xib <= xIB.size(), "kt: the level's own buffers read ahead do not fit their places");
+		for (u32 i = 0; i < nvb; i++) { nDC[i] = S->nDC[i]; nVB[i] = S->nVB[i]; }
+		for (u32 i = 0; i < xvb; i++) { xDC[i] = S->xDC[i]; xVB[i] = S->xVB[i]; }
+		for (u32 i = 0; i < nib; i++) nIB[i] = S->nIB[i];
+		for (u32 i = 0; i < xib; i++) xIB[i] = S->xIB[i];
+		S->nVB.clear(); S->xVB.clear(); S->nIB.clear(); S->xIB.clear();
+		for (u32 i = 0; i < SWIs.size(); i++) xr_free(SWIs[i].sw);
+		SWIs.swap(*S->swis);
+		S->swis->clear();
+		kt_all_cut.swap(S->all_cut);
+		Msg("* [kt chunk] buffers of the level itself were read ahead in %u ms: VB %u, IB %u", S->ms, nvb, nib);
+		kt_stage_free(S);
 	}
+	else
 	{
-		CStreamReader* geom = FS.rs_open("$level$", "level.geomx");
-		R_ASSERT2(geom, "level.geomX");
-		LoadBuffers(geom, TRUE);
-		FS.r_close(geom);
+		chunk = fs->open_chunk(fsL_VISUALS);
+		kt_CutScan(chunk);
+		chunk->close();
+		{
+			CStreamReader* geom = FS.rs_open("$level$", "level.geom");
+			R_ASSERT2(geom, "level.geom");
+			LoadBuffers(geom, FALSE);
+			LoadSWIs(geom);
+			FS.r_close(geom);
+		}
+		{
+			CStreamReader* geom = FS.rs_open("$level$", "level.geomx");
+			R_ASSERT2(geom, "level.geomX");
+			LoadBuffers(geom, TRUE);
+			FS.r_close(geom);
+		}
 	}
 	kt_cut_ranges.clear();
 	chunk = fs->open_chunk(fsL_VISUALS);
@@ -823,8 +881,14 @@ void CRender::kt_shader_names(u32 piece, xr_vector<std::pair<xr_string, xr_strin
 {
 	names.clear();
 	string_path file;
-	FS.update_path(file, "$game_levels$", g_kt_chunk.pieces[piece].name);
-	xr_strcat(file, "\\level");
+	// u32(-1): the level's own, named as they are
+	const bool own = piece == u32(-1);
+	if (own) FS.update_path(file, "$level$", "level");
+	else
+	{
+		FS.update_path(file, "$game_levels$", g_kt_chunk.pieces[piece].name);
+		xr_strcat(file, "\\level");
+	}
 	IReader* fs = FS.r_open(file);
 	if (!fs) return;
 	IReader* chunk = fs->open_chunk(fsL_SHADERS);
@@ -847,7 +911,7 @@ void CRender::kt_shader_names(u32 piece, xr_vector<std::pair<xr_string, xr_strin
 		{
 			_GetItem(delim + 1, t, token);
 			if (t) xr_strcat(n_tlist, ",");
-			if (0 == strncmp(token, "lmap#", 5) || 0 == strncmp(token, "level_lods", 10))
+			if (!own && (0 == strncmp(token, "lmap#", 5) || 0 == strncmp(token, "level_lods", 10)))
 			{
 				string32 prefix;
 				xr_sprintf(prefix, "kt~%u~", piece);
@@ -876,11 +940,14 @@ bool CRender::kt_piece_prepare(u32 piece)
 	}
 	CTimer timer;
 	timer.Start();
+	xr_vector<ref_shader>& made = kt_prep_by_piece[piece];
+	made.resize(kt_prep_names.size());
 	while (kt_prep_at < kt_prep_names.size() && timer.GetElapsed_ms() < 3)
 	{
-		const std::pair<xr_string, xr_string>& name = kt_prep_names[kt_prep_at++];
+		const u32 at = kt_prep_at++;
+		const std::pair<xr_string, xr_string>& name = kt_prep_names[at];
 		if (name.first.empty()) continue;
-		kt_prep_shaders.push_back(dxRenderDeviceRender::Instance().Resources->Create(name.first.c_str(), name.second.c_str()));
+		made[at] = dxRenderDeviceRender::Instance().Resources->Create(name.first.c_str(), name.second.c_str());
 	}
 	if (kt_prep_at < kt_prep_names.size()) return false;
 	kt_prep_done.push_back(piece);
@@ -890,11 +957,135 @@ bool CRender::kt_piece_prepare(u32 piece)
 
 void CRender::kt_prepare_reset()
 {
+	kt_prep_by_piece.clear();
 	kt_prep_shaders.clear();
 	kt_prep_done.clear();
 	kt_prep_names.clear();
 	kt_prep_piece = u32(-1);
 	kt_prep_at = 0;
+}
+
+// On the streaming thread, between the decision to take pieces in and their coming in (kt_stream_tick):
+// a piece's geometry buffers read and made into a list of their own. Nothing of the containers the
+// frame draws from is touched; the main thread only puts the buffers in place (kt_LoadChunk,
+// kt_base_render). D3D11 makes buffers on any thread; the textures are made on worker threads already.
+void CRender::kt_piece_stage(u32 piece)
+{
+	const bool own = piece == u32(-1);
+	if (!own && piece >= g_kt_chunk.pieces.size()) return;
+	CTimer timer;
+	timer.Start();
+	kt_staged* S = xr_new<kt_staged>();
+	S->piece = piece;
+	S->swis = xr_new<xr_vector<FSlideWindowItem> >();
+	S->ms = 0;
+	string_path dir, file;
+	if (own) FS.update_path(dir, "$level$", "");
+	else
+	{
+		FS.update_path(dir, "$game_levels$", g_kt_chunk.pieces[piece].name);
+		xr_strcat(dir, "\\");
+		// the shaders a visual names decide how strictly it is cut; known by name before they are made
+		xr_vector<std::pair<xr_string, xr_string> > names;
+		kt_shader_names(piece, names);
+		S->screen.resize(names.size(), 0);
+		for (u32 i = 0; i < names.size(); i++)
+		{
+			LPCSTR n_tlist = names[i].second.c_str();
+			S->screen[i] = (strstr(n_tlist, "prop_fake") || strstr(n_tlist, "fx_lavahell")) ? 1 : (strstr(n_tlist, "terrain\\") == n_tlist ? 2 : 0);
+		}
+	}
+	strconcat(sizeof(file), file, dir, "level");
+	IReader* fs = FS.r_open(file);
+	if (!fs)
+	{
+		Msg("! [kt chunk] cannot open %s to read ahead", file);
+		kt_stage_free(S);
+		return;
+	}
+	if (!own)
+	{
+		g_kt_chunk.select(piece);
+		g_kt_chunk.loading = true; // on this thread only
+	}
+	kt_stage_thread = GetCurrentThreadId();
+	kt_stage_into = S;
+	{
+		IReader* visuals = fs->open_chunk(fsL_VISUALS);
+		kt_CutScan(visuals);
+		visuals->close();
+		if (!own)
+		{
+			visuals = fs->open_chunk(fsL_VISUALS);
+			kt_LocalScan(visuals);
+			visuals->close();
+		}
+		string_path over;
+		if (own) strconcat(sizeof(file), file, dir, "level.geom");
+		else
+		{
+			// a patched copy made for the seam (relit, for one) goes before the level's own file
+			strconcat(sizeof(over), over, "kt_override\\", g_kt_chunk.pieces[piece].name, "\\level.geom");
+			if (!FS.exist(file, "$game_levels$", over))
+				strconcat(sizeof(file), file, dir, "level.geom");
+		}
+		CStreamReader* geom = FS.rs_open(0, file);
+		R_ASSERT2(geom, file);
+		LoadBuffers(geom, FALSE);
+		LoadSWIs(geom);
+		FS.r_close(geom);
+		strconcat(sizeof(file), file, dir, "level.geomx");
+		if (FS.exist(file))
+		{
+			geom = FS.rs_open(0, file);
+			R_ASSERT2(geom, file);
+			LoadBuffers(geom, TRUE);
+			FS.r_close(geom);
+		}
+		kt_cut_ranges.clear();
+		kt_local_ranges.clear();
+	}
+	kt_stage_into = nullptr;
+	kt_stage_thread = 0;
+	g_kt_chunk.loading = false;
+	FS.r_close(fs);
+	S->ms = timer.GetElapsed_ms();
+	kt_stage_list.push_back(S);
+	Msg("* [kt chunk] buffers of %s read ahead in %u ms: VB %u, IB %u", own ? "the level itself" : g_kt_chunk.pieces[piece].name, S->ms,
+	    u32(S->nVB.size()), u32(S->nIB.size()));
+}
+
+CRender::kt_staged* CRender::kt_stage_take(u32 piece)
+{
+	for (u32 i = 0; i < kt_stage_list.size(); i++)
+		if (kt_stage_list[i]->piece == piece)
+		{
+			kt_staged* S = kt_stage_list[i];
+			kt_stage_list.erase(kt_stage_list.begin() + i);
+			return S;
+		}
+	return nullptr;
+}
+
+void CRender::kt_stage_free(kt_staged* S)
+{
+	if (!S) return;
+	for (u32 i = 0; i < S->nVB.size(); i++) _RELEASE(S->nVB[i]);
+	for (u32 i = 0; i < S->xVB.size(); i++) _RELEASE(S->xVB[i]);
+	for (u32 i = 0; i < S->nIB.size(); i++) _RELEASE(S->nIB[i]);
+	for (u32 i = 0; i < S->xIB.size(); i++) _RELEASE(S->xIB[i]);
+	if (S->swis)
+	{
+		for (u32 i = 0; i < S->swis->size(); i++) xr_free((*S->swis)[i].sw);
+		xr_delete(S->swis);
+	}
+	xr_delete(S);
+}
+
+void CRender::kt_stage_drop()
+{
+	for (u32 i = 0; i < kt_stage_list.size(); i++) kt_stage_free(kt_stage_list[i]);
+	kt_stage_list.clear();
 }
 
 // Lights keep the list of static geometry they shadow for as long as they stand still. When
@@ -1074,7 +1265,7 @@ void CRender::LoadSWIs(CStreamReader* base_fs)
 
 		// kt: a chunk's items live in a vector of their own. Visuals keep pointers to the items, so
 		// the level's vector must not grow after its visuals are loaded.
-		xr_vector<FSlideWindowItem>& items = g_kt_chunk.loading ? *kt_SWIs.back() : SWIs;
+		xr_vector<FSlideWindowItem>& items = kt_staging() ? *kt_stage_into->swis : g_kt_chunk.loading ? *kt_SWIs.back() : SWIs;
 		xr_vector<FSlideWindowItem>::iterator it = items.begin();
 		xr_vector<FSlideWindowItem>::iterator it_e = items.end();
 

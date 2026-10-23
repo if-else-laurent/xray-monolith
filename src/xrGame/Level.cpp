@@ -663,8 +663,29 @@ void CLevel::ProcessSpawnEvents()
         }
 	}
 
-	for (const auto& E : events_to_process)
+	// kt: with the world keys the objects that come online at once - a neighbour taken in lets its land's
+	// objects out of kt_land_absent all in one frame - go a few per frame, by a budget of time
+	// (-kt_spawn_budget <ms>, 8 by default; 0 - all at once, as before). The rest wait in the queue.
+	CTimer kt_budget_timer;
+	kt_budget_timer.Start();
+	const float kt_budget = g_kt_chunk.active ? g_kt_chunk.spawn_budget : 0.f;
+	for (u32 kt_at = 0; kt_at < events_to_process.size(); kt_at++)
 	{
+		if (kt_budget > 0.f && kt_at > 0 && kt_budget_timer.GetElapsed_sec() * 1000.f > kt_budget)
+		{
+			g_kt_chunk.busy();
+			xrSRWLockGuard g(prefetch_lock);
+			auto& queue = spawn_events->queue;
+			queue.insert(queue.begin(), events_to_process.begin() + kt_at, events_to_process.end());
+			for (auto& kept : spawn_events_data_copy) spawn_events_data->emplace(kept.first, kept.second);
+			static u32 kt_deferred = 0;
+			const u32 n = ++kt_deferred;
+			if ((n & (n - 1)) == 0)
+				Msg("* [kt spawn] %u objects went online in %.0f ms, %u wait for the next frame (%u times so far)", kt_at,
+				    kt_budget_timer.GetElapsed_sec() * 1000.f, u32(events_to_process.size()) - kt_at, n);
+			break;
+		}
+		const auto& E = events_to_process[kt_at];
 		auto data = make_intrusive<ProcessNetPacket>();
 		u16 ID, dest, type;
 		NET_Packet& P = data->P;
@@ -690,7 +711,9 @@ void CLevel::ProcessSpawnEvents()
         auto spawn_data_it = spawn_events_data_copy.find(obj_id);
         if (spawn_data_it != spawn_events_data_copy.end())
         {
-            if (spawn_data_it->second.hasAlifeObject)
+            const bool had_alife_object = spawn_data_it->second.hasAlifeObject;
+            spawn_events_data_copy.erase(spawn_data_it); // kt: what is left goes back with the events left for later
+            if (had_alife_object)
             {
                 auto obj = ai().alife().objects().object(obj_id);
                 if (!obj)
@@ -1003,6 +1026,47 @@ void CLevel::MakeReconnect()
 	}
 }
 
+// Seamless world experiment (kt): the actor over land whose level is not loaded yet - put there by the
+// guide, the map, a script, or come faster than the neighbour - stands held where he is, with the
+// screen darkened and the loader icon, until the land comes; he fell through the void before. Whose
+// land a place is, the mask tells (0 the level, 1.. the attached ones; nobody's land is ours, always there).
+static void kt_hold_actor()
+{
+	static bool held = false;
+	static Fvector at;
+	static CTimer since;
+	CActor* A = Actor();
+	bool absent = false;
+	if (g_kt_chunk.active && A && A->g_Alive() && !g_kt_chunk.mask.empty())
+	{
+		const Fvector& P = A->Position();
+		if (held && P.distance_to(at) > 2.f) at = P; // put elsewhere again while held
+		const u8 cell = g_kt_chunk.mask_at(P.x, P.z);
+		const u32 owner = u32(cell & 0x7f);
+		if (cell != 255 && owner < g_kt_chunk.mask_pieces)
+			absent = owner == 0 ? !g_kt_chunk.base_loaded : (owner - 1 < g_kt_chunk.pieces.size() && !g_kt_chunk.pieces[owner - 1].loaded);
+	}
+	if (absent && !held)
+	{
+		held = true;
+		at = A->Position();
+		since.Start();
+		Msg("* [kt hold] the actor is held at %.1f, %.1f, %.1f: the land of %s under him is not there yet", at.x, at.y, at.z,
+		    u32(g_kt_chunk.mask_at(at.x, at.z) & 0x7f) == 0 ? "the level itself" : g_kt_chunk.pieces[u32(g_kt_chunk.mask_at(at.x, at.z) & 0x7f) - 1].name);
+	}
+	else if (!absent && held)
+	{
+		held = false;
+		Msg("* [kt hold] the actor is let go after %.1f s: the land came", since.GetElapsed_sec());
+	}
+	g_kt_chunk.held = held;
+	if (!held) return;
+	g_kt_chunk.busy();
+	Fmatrix M = A->XFORM();
+	M.c = at;
+	A->ForceTransform(M);
+}
+
 BOOL mt_ph_commander = FALSE;
 BOOL mt_TaskManager = FALSE;
 void CLevel::OnFrame()
@@ -1063,6 +1127,8 @@ void CLevel::OnFrame()
 		}
 	}
 #endif
+
+	kt_hold_actor();
 
 	if (m_bNeed_CrPr)
 		make_NetCorrectionPrediction();
@@ -1342,6 +1408,8 @@ void CLevel::OnRender()
 		render_reshade_effects();
 
 	HUD().RenderUI();
+	extern void kt_render_loader_icon(); // seamless world experiment (kt), HUDManager.cpp
+	kt_render_loader_icon();
 
 	ScriptDebugRender();
 

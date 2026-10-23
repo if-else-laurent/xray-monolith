@@ -188,6 +188,28 @@ public:
 	virtual void kt_base_render(bool on);
 	virtual bool kt_piece_prepare(u32 piece);
 	virtual void kt_prepare_reset();
+	// kt: the buffers of a piece (u32(-1): the level's own) read and made on the streaming thread
+	struct kt_staged
+	{
+		u32 piece;
+		xr_vector<VertexDeclarator> nDC, xDC;
+		xr_vector<ID3DVertexBuffer*> nVB, xVB;
+		xr_vector<ID3DIndexBuffer*> nIB, xIB;
+		xr_vector<FSlideWindowItem>* swis;
+		xr_vector<std::pair<u32, u32> > all_cut; // as kt_all_cut, for this piece
+		xr_vector<u8> screen; // as kt_screen, by the piece's own numbers of shaders
+		u32 ms;
+	};
+	xr_vector<kt_staged*> kt_stage_list;
+	kt_staged* kt_stage_into; // the one the streaming thread reads into now
+	DWORD kt_stage_thread;
+	bool kt_staging() const { return kt_stage_into && kt_stage_thread == GetCurrentThreadId(); }
+	virtual void kt_piece_stage(u32 piece);
+	virtual void kt_stage_drop();
+	kt_staged* kt_stage_take(u32 piece);
+	void kt_stage_free(kt_staged* S);
+	// materials made ahead by kt_piece_prepare, by the piece's own numbers (u32(-1): the level's own)
+	xr_map<u32, xr_vector<ref_shader> > kt_prep_by_piece;
 	virtual void kt_report();
 	void kt_shader_names(u32 piece, xr_vector<std::pair<xr_string, xr_string> >& names);
 	void kt_forget_statics();

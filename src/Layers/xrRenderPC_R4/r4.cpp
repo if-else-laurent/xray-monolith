@@ -902,7 +902,7 @@ void CRender::rmNormal()
 // Construction/Destruction
 //////////////////////////////////////////////////////////////////////
 CRender::CRender()
-	: m_bFirstFrameAfterReset(false)
+	: m_bFirstFrameAfterReset(false), kt_stage_into(nullptr), kt_stage_thread(0)
 {
 	init_cacades();
 }

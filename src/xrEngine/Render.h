@@ -327,6 +327,11 @@ public:
 	// a piece's materials with their lightmaps made ahead, a few per frame; true when all are there
 	virtual bool kt_piece_prepare(u32 piece) { return true; }
 	virtual void kt_prepare_reset() {}
+	// On the streaming thread: a piece's geometry buffers (piece u32(-1): the level's own) read and made
+	// ahead of its coming in, so that the main thread only puts them in place. kt_stage_drop frees
+	// whatever was read and not taken in.
+	virtual void kt_piece_stage(u32 piece) {}
+	virtual void kt_stage_drop() {}
 	// what the renderer thinks of sectors where the camera is, into the log (console kt_piece)
 	virtual void kt_report() {}
 

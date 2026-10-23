@@ -70,13 +70,30 @@ struct KtPiece
 	Fbox walk;
 };
 
+// True on the thread that reads a piece's files right now: the main thread putting a piece in, the
+// streaming thread reading its buffers ahead. Was one flag for all threads: a model loaded on another
+// thread meanwhile (an object going online, the spawn's prefetch) took the piece's numbers and shift.
+struct ENGINE_API KtThreadFlag
+{
+	operator bool() const;
+	KtThreadFlag& operator=(bool on);
+};
+
 struct ENGINE_API KtChunk
 {
 	xr_vector<KtPiece> pieces;
 	bool configured; // asked for on the command line and found
 	bool active; // and the level being played is the one it is to stand next to
 	string64 base; // -kt_chunk_base <level>: the only level the chunk is added to; empty - any
-	bool loading; // the renderer is reading the chunk's files right now
+	KtThreadFlag loading; // the renderer is reading the chunk's files right now, on this thread
+	float spawn_budget; // -kt_spawn_budget <ms>: objects coming online after their models, at most so long a frame (0 - all at once)
+	// The loader icon in the corner (drawn by the game's HUD): the last moment something of the world
+	// was on its way - a neighbour prepared aside, its objects coming online a few per frame, the actor
+	// held over land that is not there yet. -kt_icon 0 hides it.
+	float busy_time;
+	bool icon;
+	bool held; // the actor is held where he stands, the land under him is still on its way (CLevel, kt_hold_actor)
+	void busy(); // now
 	u32 current; // the piece being read
 	string64 name; // of the piece being read
 	Fvector offset;
@@ -340,7 +357,7 @@ struct ENGINE_API KtChunk
 		return strict && (foreign(piece, a.x, a.z) || foreign(piece, b.x, b.z) || foreign(piece, c.x, c.z));
 	}
 
-	KtChunk() : configured(false), active(false), loading(false), current(0), fake_material(u32(-1)), static_radius(0), stream_in(0), stream_out(0), reach_in(0), reach_out(0), location_depth(60.f), location_wait(20.f), sight_in(0), sight_out(0), sight_x0(0), sight_z0(0), sight_cell(1), sight_nx(0), sight_nz(0), sight_pieces(0), base_loaded(true), base_wanted(true), base_manual(false), base_has_walk(false), mask_x0(0), mask_z0(0), mask_cell(1), mask_nx(0), mask_nz(0), mask_pieces(0)
+	KtChunk() : configured(false), active(false), spawn_budget(8.f), busy_time(-1.f), icon(true), held(false), current(0), fake_material(u32(-1)), static_radius(0), stream_in(0), stream_out(0), reach_in(0), reach_out(0), location_depth(60.f), location_wait(20.f), sight_in(0), sight_out(0), sight_x0(0), sight_z0(0), sight_cell(1), sight_nx(0), sight_nz(0), sight_pieces(0), base_loaded(true), base_wanted(true), base_manual(false), base_has_walk(false), mask_x0(0), mask_z0(0), mask_cell(1), mask_nx(0), mask_nz(0), mask_pieces(0)
 	{
 		name[0] = 0;
 		base[0] = 0;

@@ -20,6 +20,16 @@ ENGINE_API IGame_Level* g_pGameLevel = NULL;
 ENGINE_API KtChunk g_kt_chunk;
 ENGINE_API KtFrameCost g_kt_frame;
 
+void KtChunk::busy() { busy_time = Device.fTimeGlobal; }
+
+static thread_local bool kt_thread_loading = false;
+KtThreadFlag::operator bool() const { return kt_thread_loading; }
+KtThreadFlag& KtThreadFlag::operator=(bool on)
+{
+	kt_thread_loading = on;
+	return *this;
+}
+
 // Reads -kt_chunk <level>,<x>,<y>,<z> and checks that the level has what is needed.
 // The keys do not change while the game runs, and the AI map is read on another thread at the same
 // time as the level, so they are read once, under a lock.
@@ -234,6 +244,14 @@ static void kt_chunk_setup()
 	}
 	g_kt_frame.log_ms = 50.f;
 	if (LPCSTR k = strstr(params, "-kt_frame_log ")) sscanf(k + 14, "%f", &g_kt_frame.log_ms);
+	if (LPCSTR k = strstr(params, "-kt_spawn_budget ")) sscanf(k + 17, "%f", &g_kt_chunk.spawn_budget);
+	if (LPCSTR k = strstr(params, "-kt_icon "))
+	{
+		int on = 1;
+		sscanf(k + 9, "%d", &on);
+		g_kt_chunk.icon = on != 0;
+	}
+	Msg("* [kt spawn] objects come online after their models by %.0f ms a frame at most%s", g_kt_chunk.spawn_budget, g_kt_chunk.spawn_budget > 0.f ? "" : " (off: all at once)");
 	if (g_kt_frame.log_ms > 0.f) Msg("* [kt frame] frames longer than %.0f ms are told to the log by stages", g_kt_frame.log_ms);
 	if (LPCSTR k = strstr(params, "-kt_static_radius "))
 	{
@@ -552,13 +570,15 @@ void IGame_Level::kt_stream_tick()
 		kt_stream_task.run([this]()
 		{
 			ObjectSpace.kt_BuildModel(*kt_fresh, kt_stream_job_base, kt_cform_built, kt_stream_job, kt_cform_cut);
-			// the files the main thread is about to read for the pieces on their way in: into the system's cache
+			// the geometry buffers of the pieces on their way in are read and made here, the main thread
+			// only puts them in place; the level file it still reads (visuals, sectors) into the system's cache
 			for (u32 n = 0; n < kt_stream_job.size(); n++)
 			{
 				const KtPiece& P = g_kt_chunk.pieces[kt_stream_job[n].piece];
 				if (P.loaded) continue;
-				static const LPCSTR files[3] = {"\\level.geom", "\\level.geomx", "\\level"};
-				for (u32 f = 0; f < 3; f++)
+				Render->kt_piece_stage(kt_stream_job[n].piece);
+				static const LPCSTR files[1] = {"\\level"};
+				for (u32 f = 0; f < 1; f++)
 				{
 					string_path file;
 					FS.update_path(file, "$game_levels$", P.name);
@@ -572,10 +592,12 @@ void IGame_Level::kt_stream_tick()
 					FS.r_close(R);
 				}
 			}
+			if (kt_stream_job_base && !g_kt_chunk.base_loaded) Render->kt_piece_stage(u32(-1));
 			kt_stream_state = 2;
 		});
 		return;
 	}
+	g_kt_chunk.busy(); // the icon in the corner while a neighbour is prepared
 	// the materials of the pieces on their way in are made a few per frame meanwhile
 	bool prepared = true;
 	for (u32 n = 0; n < kt_stream_job.size(); n++)
@@ -584,6 +606,8 @@ void IGame_Level::kt_stream_tick()
 			prepared = false;
 			break;
 		}
+	// and the level's own, when it is to come back (it had none made ahead: 0,65 s of it on the main thread)
+	if (prepared && kt_stream_job_base && !g_kt_chunk.base_loaded && !Render->kt_piece_prepare(u32(-1))) prepared = false;
 	if (kt_stream_state != 2 || !prepared) return;
 
 	kt_stream_task.wait();
@@ -641,6 +665,7 @@ void IGame_Level::kt_stream_tick()
 		xr_strcat(come, " the level itself");
 	}
 	Render->kt_prepare_reset();
+	Render->kt_stage_drop();
 	Sound->set_geometry_occ(ObjectSpace.GetStaticModel());
 	Msg("* [kt stream] let go:%s; taken in:%s. Collisions built aside in %u ms; on the main thread: swap %u, old model freed %u, geometry dropped %u, geometry read %u ms",
 	    gone[0] ? gone : " -", come[0] ? come : " -", built_ms, swap_ms, freed_ms - swap_ms, gone_ms - freed_ms, timer.GetElapsed_ms() - gone_ms);
