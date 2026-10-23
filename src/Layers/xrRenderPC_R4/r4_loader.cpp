@@ -1179,7 +1179,7 @@ bool CRender::kt_piece_prepare(u32 piece)
 	}
 	if (kt_prep_at < kt_prep_names.size()) return false;
 	kt_prep_done.push_back(piece);
-	kt_prep_piece = u32(-1);
+	kt_prep_piece = u32(-2); // none: u32(-1) is the level itself
 	return true;
 }
 
@@ -1189,7 +1189,7 @@ void CRender::kt_prepare_reset()
 	kt_prep_shaders.clear();
 	kt_prep_done.clear();
 	kt_prep_names.clear();
-	kt_prep_piece = u32(-1);
+	kt_prep_piece = u32(-2); // none: u32(-1) is the level itself
 	kt_prep_at = 0;
 }
 
