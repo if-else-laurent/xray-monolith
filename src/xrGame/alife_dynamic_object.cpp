@@ -175,7 +175,7 @@ bool kt_land_absent(const CSE_ALifeDynamicObject* object)
 
 // kt: how many objects went online this frame (CALifeSwitchManager::switch_online counts them). A neighbour
 // taken in let 200-570 objects of its land online in one update - anomalies, restrictors, things, 220-270 ms
-// of the client spawning them in one frame. With the world at most -kt_online_per_frame (32) go in a
+// of the client spawning them in one frame. With the world at most -kt_online_per_frame (12; 32 cost 60-100 ms) go in a
 // frame; the rest stay offline till the next update, which comes the next frame.
 static u32 kt_online_frame = u32(-1), kt_online_count = 0;
 void kt_online_counted()

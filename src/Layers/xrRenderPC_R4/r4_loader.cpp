@@ -117,6 +117,11 @@ void CRender::level_Load(IReader* fs)
 
 	// Seamless world experiment (kt): the static geometry of one more level, shifted
 	if (g_kt_chunk.active && !g_dedicated_server)
+	{
+		xr_vector<std::pair<xr_string, xr_string> > names;
+		kt_shader_names(u32(-1), names); // the level's own names, kept for when it comes back
+	}
+	if (g_kt_chunk.active && !g_dedicated_server)
 		for (u32 piece = 0; piece < g_kt_chunk.pieces.size(); piece++)
 		{
 			CTimer kt_timer;
@@ -159,6 +164,7 @@ void CRender::level_Unload()
 
 	//*** Details
 	Details->Unload();
+	kt_names_cache.clear();
 	kt_stage_drop(); // kt: buffers read ahead for a piece that did not come in
 	kt_prepare_reset();
 	kt_ahead_drop();
@@ -570,10 +576,13 @@ CRender::kt_ahead_state* CRender::kt_chunk_begin(u32 piece)
 	string_path dir, file;
 	FS.update_path(dir, "$game_levels$", g_kt_chunk.name);
 	strconcat(sizeof(file), file, dir, "\\level");
-	IReader* fs = FS.r_open(file);
+	kt_staged* staged = kt_stage_take(piece);
+	IReader* fs = staged && staged->level ? staged->level : FS.r_open(file);
+	if (staged) staged->level = nullptr;
 	if (!fs)
 	{
 		Msg("! [kt chunk] cannot open %s", file);
+		kt_stage_free(staged);
 		return nullptr;
 	}
 	kt_ahead_state* A = xr_new<kt_ahead_state>();
@@ -619,7 +628,7 @@ CRender::kt_ahead_state* CRender::kt_chunk_begin(u32 piece)
 
 	A->ms_shaders = kt_stage.GetElapsed_ms();
 	// Geometry: read ahead on the streaming thread (kt_piece_stage) and only put in place here, or read now
-	if (kt_staged* S = kt_stage_take(piece))
+	if (kt_staged* S = staged)
 	{
 		const u32 nvb = u32(S->nVB.size()), xvb = u32(S->xVB.size()), nib = u32(S->nIB.size()), xib = u32(S->xIB.size());
 		if (nDC.size() < kt_base_vb + nvb) nDC.resize(kt_base_vb + nvb);
@@ -972,7 +981,9 @@ bool CRender::kt_base_ahead(float budget)
 	{
 		CTimer timer;
 		timer.Start();
-		IReader* fs = B.fs = FS.r_open("$level$", "level");
+		kt_staged* staged = kt_stage_take(u32(-1));
+		IReader* fs = B.fs = staged && staged->level ? staged->level : FS.r_open("$level$", "level");
+		if (staged) staged->level = nullptr;
 		R_ASSERT2(fs, "kt: the level file");
 		B.index = 0;
 		B.done = false;
@@ -1004,7 +1015,7 @@ bool CRender::kt_base_ahead(float budget)
 			}
 			chunk->close();
 		}
-		if (kt_staged* S = kt_stage_take(u32(-1)))
+		if (kt_staged* S = staged)
 		{
 			// read ahead on the streaming thread: back to the level's own places at the starts of the containers
 			const u32 nvb = u32(S->nVB.size()), xvb = u32(S->xVB.size()), nib = u32(S->nIB.size()), xib = u32(S->xIB.size());
@@ -1083,6 +1094,17 @@ void CRender::kt_piece_render(u32 piece, bool on)
 // understands: "kt~<piece>~".
 void CRender::kt_shader_names(u32 piece, xr_vector<std::pair<xr_string, xr_string> >& names)
 {
+	// the names never change: read once (the level's load reads them all) and kept; opening the level file
+	// of Cordon again cost 200-270 ms of the main thread
+	{
+		xrCriticalSectionGuard guard(kt_names_lock);
+		xr_map<u32, xr_vector<std::pair<xr_string, xr_string> > >::iterator known = kt_names_cache.find(piece);
+		if (known != kt_names_cache.end())
+		{
+			names = known->second;
+			return;
+		}
+	}
 	names.clear();
 	string_path file;
 	// u32(-1): the level's own, named as they are
@@ -1128,6 +1150,8 @@ void CRender::kt_shader_names(u32 piece, xr_vector<std::pair<xr_string, xr_strin
 	}
 	chunk->close();
 	FS.r_close(fs);
+	xrCriticalSectionGuard guard(kt_names_lock);
+	kt_names_cache[piece] = names;
 }
 
 // Called every frame while a piece is on its way in: a few materials are made each time, so that
@@ -1182,6 +1206,7 @@ void CRender::kt_piece_stage(u32 piece)
 	kt_staged* S = xr_new<kt_staged>();
 	S->piece = piece;
 	S->swis = xr_new<xr_vector<FSlideWindowItem> >();
+	S->level = nullptr;
 	S->ms = 0;
 	string_path dir, file;
 	if (own) FS.update_path(dir, "$level$", "");
@@ -1252,7 +1277,7 @@ void CRender::kt_piece_stage(u32 piece)
 	kt_stage_into = nullptr;
 	kt_stage_thread = 0;
 	g_kt_chunk.loading = false;
-	FS.r_close(fs);
+	S->level = fs; // opened here: the main thread reads the visuals and sectors from it
 	S->ms = timer.GetElapsed_ms();
 	kt_stage_list.push_back(S);
 	Msg("* [kt chunk] buffers of %s read ahead in %u ms: VB %u, IB %u", own ? "the level itself" : g_kt_chunk.pieces[piece].name, S->ms,
@@ -1274,6 +1299,7 @@ CRender::kt_staged* CRender::kt_stage_take(u32 piece)
 void CRender::kt_stage_free(kt_staged* S)
 {
 	if (!S) return;
+	if (S->level) FS.r_close(S->level);
 	for (u32 i = 0; i < S->nVB.size(); i++) _RELEASE(S->nVB[i]);
 	for (u32 i = 0; i < S->xVB.size(); i++) _RELEASE(S->xVB[i]);
 	for (u32 i = 0; i < S->nIB.size(); i++) _RELEASE(S->nIB[i]);

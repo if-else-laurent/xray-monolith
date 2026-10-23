@@ -358,7 +358,7 @@ struct ENGINE_API KtChunk
 		return strict && (foreign(piece, a.x, a.z) || foreign(piece, b.x, b.z) || foreign(piece, c.x, c.z));
 	}
 
-	KtChunk() : configured(false), active(false), online_per_frame(32), spawn_budget(8.f), busy_time(-1.f), icon(true), held(false), current(0), fake_material(u32(-1)), static_radius(0), stream_in(0), stream_out(0), reach_in(0), reach_out(0), location_depth(60.f), location_wait(20.f), sight_in(0), sight_out(0), sight_x0(0), sight_z0(0), sight_cell(1), sight_nx(0), sight_nz(0), sight_pieces(0), base_loaded(true), base_wanted(true), base_manual(false), base_has_walk(false), mask_x0(0), mask_z0(0), mask_cell(1), mask_nx(0), mask_nz(0), mask_pieces(0)
+	KtChunk() : configured(false), active(false), online_per_frame(12), spawn_budget(8.f), busy_time(-1.f), icon(true), held(false), current(0), fake_material(u32(-1)), static_radius(0), stream_in(0), stream_out(0), reach_in(0), reach_out(0), location_depth(60.f), location_wait(20.f), sight_in(0), sight_out(0), sight_x0(0), sight_z0(0), sight_cell(1), sight_nx(0), sight_nz(0), sight_pieces(0), base_loaded(true), base_wanted(true), base_manual(false), base_has_walk(false), mask_x0(0), mask_z0(0), mask_cell(1), mask_nx(0), mask_nz(0), mask_pieces(0)
 	{
 		name[0] = 0;
 		base[0] = 0;

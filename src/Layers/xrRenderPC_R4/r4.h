@@ -198,6 +198,7 @@ public:
 		xr_vector<FSlideWindowItem>* swis;
 		xr_vector<std::pair<u32, u32> > all_cut; // as kt_all_cut, for this piece
 		xr_vector<u8> screen; // as kt_screen, by the piece's own numbers of shaders
+		IReader* level; // its level file, opened here and handed to the main thread
 		u32 ms;
 	};
 	xr_vector<kt_staged*> kt_stage_list;
@@ -252,6 +253,8 @@ public:
 	xr_map<u32, xr_vector<ref_shader> > kt_prep_by_piece;
 	virtual void kt_report();
 	void kt_shader_names(u32 piece, xr_vector<std::pair<xr_string, xr_string> >& names);
+	xr_map<u32, xr_vector<std::pair<xr_string, xr_string> > > kt_names_cache;
+	xrCriticalSection kt_names_lock;
 	void kt_forget_statics();
 	xr_vector<std::pair<xr_string, xr_string> > kt_prep_names;
 	xr_vector<ref_shader> kt_prep_shaders;
