@@ -384,12 +384,12 @@ void CRenderDevice::on_idle()
 		}
 		// what came online and went offline in the ten seconds after a change of neighbours, however short its frames
 		{
-			static u32 since = 0, online = 0, offline = 0, frames = 0, last = 0;
+			static u32 since = 0, seen = 0, online = 0, offline = 0, frames = 0, last = 0;
 			static float online_ms = 0.f, worst = 0.f;
 			static CTimer window;
-			if (g_kt_frame.changed_frame && g_kt_frame.changed_frame != since)
+			if (g_kt_frame.changed_frame && g_kt_frame.changed_frame != seen)
 			{
-				since = g_kt_frame.changed_frame;
+				since = seen = g_kt_frame.changed_frame;
 				online = offline = frames = last = 0;
 				online_ms = worst = 0.f;
 				window.Start();
