@@ -173,6 +173,30 @@ bool kt_land_absent(const CSE_ALifeDynamicObject* object)
 	return (piece != 255 && !g_kt_chunk.present(piece));
 }
 
+// kt: how many objects went online this frame (CALifeSwitchManager::switch_online counts them). A neighbour
+// taken in let 200-570 objects of its land online in one update - anomalies, restrictors, things, 220-270 ms
+// of the client spawning them in one frame. With the world at most -kt_online_per_frame (32) go in a
+// frame; the rest stay offline till the next update, which comes the next frame.
+static u32 kt_online_frame = u32(-1), kt_online_count = 0;
+void kt_online_counted()
+{
+	if (kt_online_frame != Device.dwFrame)
+	{
+		kt_online_frame = Device.dwFrame;
+		kt_online_count = 0;
+	}
+	kt_online_count++;
+}
+bool kt_online_full(const CSE_ALifeDynamicObject* object)
+{
+	if (!g_kt_chunk.active || !g_kt_chunk.online_per_frame || object->ID == 0 || kt_online_frame != Device.dwFrame)
+		return (false);
+	if (kt_online_count < g_kt_chunk.online_per_frame)
+		return (false);
+	g_kt_chunk.busy();
+	return (true);
+}
+
 void CSE_ALifeDynamicObject::try_switch_online()
 {
 	CSE_ALifeSchedulable* schedulable = smart_cast<CSE_ALifeSchedulable*>(this);
@@ -188,7 +212,7 @@ void CSE_ALifeDynamicObject::try_switch_online()
 			alife().scheduled().add(this);
 	}
 
-	if (!can_switch_online() || kt_land_absent(this))
+	if (!can_switch_online() || kt_land_absent(this) || kt_online_full(this))
 	{
 		on_failed_switch_online();
 		return;

@@ -108,8 +108,11 @@ void CALifeSwitchManager::remove_online(CSE_ALifeDynamicObject* object, bool upd
 	STOP_PROFILE
 }
 
+void kt_online_counted(); // seamless world experiment (kt), alife_dynamic_object.cpp
+
 void CALifeSwitchManager::switch_online(CSE_ALifeDynamicObject* object)
 {
+	kt_online_counted();
 	START_PROFILE("ALife/switch/switch_online")
 #ifdef DEBUG
 //	if (psAI_Flags.test(aiALife))

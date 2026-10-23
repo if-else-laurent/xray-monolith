@@ -245,6 +245,8 @@ static void kt_chunk_setup()
 	g_kt_frame.log_ms = 50.f;
 	if (LPCSTR k = strstr(params, "-kt_frame_log ")) sscanf(k + 14, "%f", &g_kt_frame.log_ms);
 	if (LPCSTR k = strstr(params, "-kt_spawn_budget ")) sscanf(k + 17, "%f", &g_kt_chunk.spawn_budget);
+	if (LPCSTR k = strstr(params, "-kt_online_per_frame ")) sscanf(k + 21, "%u", &g_kt_chunk.online_per_frame);
+	Msg("* [kt spawn] at most %u objects go online in a frame%s", g_kt_chunk.online_per_frame, g_kt_chunk.online_per_frame ? "" : " (off: any number)");
 	if (LPCSTR k = strstr(params, "-kt_icon "))
 	{
 		int on = 1;

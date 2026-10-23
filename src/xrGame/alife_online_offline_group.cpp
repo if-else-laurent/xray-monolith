@@ -205,6 +205,7 @@ bool CSE_ALifeOnlineOfflineGroup::synchronize_location()
 }
 
 bool kt_land_absent(const CSE_ALifeDynamicObject* object); // seamless world experiment (kt), alife_dynamic_object.cpp
+bool kt_online_full(const CSE_ALifeDynamicObject* object); // the same
 
 void CSE_ALifeOnlineOfflineGroup::try_switch_online()
 {
@@ -214,7 +215,7 @@ void CSE_ALifeOnlineOfflineGroup::try_switch_online()
 	if (!can_switch_online())
 		return;
 
-	if (kt_land_absent(this))
+	if (kt_land_absent(this) || kt_online_full(this))
 	{
 		on_failed_switch_online();
 		return;
