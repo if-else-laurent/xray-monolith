@@ -906,6 +906,7 @@ CRender::CRender()
 {
 	kt_base_st.fs = nullptr;
 	kt_base_st.done = false;
+	kt_kinds_reset();
 	init_cacades();
 }
 

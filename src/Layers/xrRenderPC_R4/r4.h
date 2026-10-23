@@ -230,6 +230,13 @@ public:
 	void kt_ahead_leave(kt_ahead_state& A);
 	void kt_ahead_drop();
 	bool kt_LoadVisuals(IReader* fs, u32& index, float budget);
+	// what the visuals of the piece being read cost by kind (a metric, docs/world-streaming.md): the
+	// terrain, other static geometry, trees, LOD billboards, groups
+	enum { kt_kind_terrain, kt_kind_static, kt_kind_trees, kt_kind_lod, kt_kind_groups, kt_kinds };
+	float kt_kind_ms[kt_kinds];
+	u32 kt_kind_n[kt_kinds];
+	void kt_kinds_reset() { ZeroMemory(kt_kind_ms, sizeof(kt_kind_ms)); ZeroMemory(kt_kind_n, sizeof(kt_kind_n)); }
+	void kt_kinds_report(LPCSTR name);
 	virtual bool kt_piece_ahead(u32 piece);
 	struct kt_base_state
 	{

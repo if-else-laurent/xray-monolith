@@ -396,6 +396,8 @@ static xr_task_group kt_stream_task;
 // the buffers of the pieces on their way in, read beside the collision model (kt_piece_stage): 1 reading, 2 read
 static xr_atomic_u32 kt_stage_state;
 static xr_task_group kt_stage_task;
+static xr_atomic_u32 kt_cform_ready_ms, kt_stage_ready_ms; // from the decision (metrics)
+static u32 kt_ahead_ready_ms;
 
 IGame_Level::~IGame_Level()
 {
@@ -577,6 +579,7 @@ void IGame_Level::kt_stream_tick()
 		kt_stream_task.run([this]()
 		{
 			ObjectSpace.kt_BuildModel(*kt_fresh, kt_stream_job_base, kt_cform_built, kt_stream_job, kt_cform_cut);
+			kt_cform_ready_ms = kt_stream_timer.GetElapsed_ms();
 			kt_stream_state = 2;
 		});
 		// beside it: the geometry buffers of the pieces on their way in (and of the level itself) read and
@@ -601,6 +604,7 @@ void IGame_Level::kt_stream_tick()
 				FS.r_close(R);
 			}
 			if (kt_stream_job_base && !g_kt_chunk.base_loaded) Render->kt_piece_stage(u32(-1));
+			kt_stage_ready_ms = kt_stream_timer.GetElapsed_ms();
 			kt_stage_state = 2;
 		});
 		return;
@@ -623,12 +627,14 @@ void IGame_Level::kt_stream_tick()
 		if (!pieces[kt_stream_job[n].piece].loaded && !Render->kt_piece_ahead(kt_stream_job[n].piece)) return;
 	if (kt_stream_job_base && !g_kt_chunk.base_loaded && !Render->kt_piece_ahead(u32(-1))) return;
 	if (kt_stream_state != 2) return;
+	kt_ahead_ready_ms = kt_stream_timer.GetElapsed_ms();
 
 	kt_stream_task.wait();
 	kt_stage_task.wait();
 	kt_stage_state = 0;
 	Device.secondary_tasks.wait(); // nobody else is to be inside the model or the geometry now
 	const u32 built_ms = kt_stream_timer.GetElapsed_ms();
+	const u32 model_kb = kt_fresh->memory() / 1024, model_tris = u32(kt_fresh->get_tris_count());
 	CTimer timer;
 	timer.Start();
 	ObjectSpace.kt_SwapStatic(*kt_fresh);
@@ -688,6 +694,9 @@ void IGame_Level::kt_stream_tick()
 	Sound->set_geometry_occ(ObjectSpace.GetStaticModel());
 	Msg("* [kt stream] let go:%s; taken in:%s. Collisions built aside in %u ms; on the main thread: swap %u, old model freed %u, geometry dropped %u, geometry read %u ms",
 	    gone[0] ? gone : " -", come[0] ? come : " -", built_ms, swap_ms, freed_ms - swap_ms, gone_ms - freed_ms, timer.GetElapsed_ms() - gone_ms);
+	Msg("* [kt stream] from the decision: collisions built in %u ms, buffers read in %u ms, visuals read ahead by %u ms, swapped at %u ms; the model %u KB, %u triangles",
+	    u32(kt_cform_ready_ms), come[0] ? u32(kt_stage_ready_ms) : 0u, come[0] ? kt_ahead_ready_ms : 0u, built_ms, model_kb, model_tris);
+	g_kt_frame.changed_frame = Device.dwFrame;
 	kt_stream_state = 0;
 }
 

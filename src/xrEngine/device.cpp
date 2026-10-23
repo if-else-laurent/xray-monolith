@@ -382,6 +382,39 @@ void CRenderDevice::on_idle()
 			    C.ms[KtFrameCost::models], C.n[KtFrameCost::models], C.ms[KtFrameCost::textures], C.n[KtFrameCost::textures],
 			    C.ms[KtFrameCost::lua_gc], C.ms[KtFrameCost::render], C.ms[KtFrameCost::wait]);
 		}
+		// what came online and went offline in the ten seconds after a change of neighbours, however short its frames
+		{
+			static u32 since = 0, online = 0, offline = 0, frames = 0, last = 0;
+			static float online_ms = 0.f, worst = 0.f;
+			static CTimer window;
+			if (g_kt_frame.changed_frame && g_kt_frame.changed_frame != since)
+			{
+				since = g_kt_frame.changed_frame;
+				online = offline = frames = last = 0;
+				online_ms = worst = 0.f;
+				window.Start();
+			}
+			if (since)
+			{
+				const u32 n = g_kt_frame.n[KtFrameCost::spawn] + g_kt_frame.n[KtFrameCost::destroy];
+				if (n)
+				{
+					online += g_kt_frame.n[KtFrameCost::spawn];
+					offline += g_kt_frame.n[KtFrameCost::destroy];
+					online_ms += g_kt_frame.ms[KtFrameCost::spawn] + g_kt_frame.ms[KtFrameCost::destroy];
+					frames++;
+					last = window.GetElapsed_ms();
+					if (frame_ms > worst) worst = frame_ms;
+				}
+				if (window.GetElapsed_ms() > 10000)
+				{
+					if (frames)
+						Msg("* [kt online] after the change at frame %u: %u objects online, %u batches offline, %.0f ms of it in %u frames over %u ms, the longest of those frames %.0f ms",
+						    since, online, offline, online_ms, frames, last, worst);
+					since = 0;
+				}
+			}
+		}
 		g_kt_frame.reset();
 	}
 

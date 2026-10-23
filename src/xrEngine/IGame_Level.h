@@ -380,6 +380,7 @@ struct ENGINE_API KtFrameCost
 	DWORD main_thread;
 	float log_ms;
 	float worst_spawn_ms; // the dearest single object that went online this frame
+	u32 changed_frame; // the frame of the last swap of neighbours: what came online after it is summed for ten seconds
 	string64 worst_spawn;
 	bool on_main() const { return main_thread && GetCurrentThreadId() == main_thread; }
 	void add(Stage s, float t)
@@ -394,7 +395,7 @@ struct ENGINE_API KtFrameCost
 		worst_spawn_ms = 0.f;
 		worst_spawn[0] = 0;
 	}
-	KtFrameCost() : main_thread(0), log_ms(0.f) { reset(); }
+	KtFrameCost() : main_thread(0), log_ms(0.f), changed_frame(0) { reset(); }
 };
 extern ENGINE_API KtFrameCost g_kt_frame;
 

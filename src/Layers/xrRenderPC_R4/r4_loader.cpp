@@ -554,6 +554,15 @@ void CRender::kt_ahead_leave(kt_ahead_state& A)
 	kt_all_cut.swap(A.all_cut);
 }
 
+void CRender::kt_kinds_report(LPCSTR name)
+{
+	Msg("* [kt time] visuals of %s by kind: terrain %.0f ms x%u, static %.0f x%u, trees %.0f x%u, lod %.0f x%u, groups %.0f x%u", name,
+	    kt_kind_ms[kt_kind_terrain], kt_kind_n[kt_kind_terrain], kt_kind_ms[kt_kind_static], kt_kind_n[kt_kind_static],
+	    kt_kind_ms[kt_kind_trees], kt_kind_n[kt_kind_trees], kt_kind_ms[kt_kind_lod], kt_kind_n[kt_kind_lod],
+	    kt_kind_ms[kt_kind_groups], kt_kind_n[kt_kind_groups]);
+	kt_kinds_reset();
+}
+
 CRender::kt_ahead_state* CRender::kt_chunk_begin(u32 piece)
 {
 	if (kt_ahead_state* was = kt_ahead_of(piece)) return was;
@@ -677,6 +686,7 @@ bool CRender::kt_chunk_visuals(kt_ahead_state& A, float budget)
 	if (A.visuals_done) return true;
 	CTimer timer;
 	timer.Start();
+	if (!A.steps) kt_kinds_reset();
 	kt_ahead_enter(A);
 	IReader* chunk = A.fs->open_chunk(fsL_VISUALS);
 	A.visuals_done = kt_LoadVisuals(chunk, A.index, budget);
@@ -684,7 +694,11 @@ bool CRender::kt_chunk_visuals(kt_ahead_state& A, float budget)
 	kt_ahead_leave(A);
 	A.ms_visuals += timer.GetElapsed_ms();
 	A.steps++;
-	if (A.visuals_done) A.visual1 = u32(Visuals.size());
+	if (A.visuals_done)
+	{
+		A.visual1 = u32(Visuals.size());
+		kt_kinds_report(g_kt_chunk.pieces[A.piece].name);
+	}
 	return A.visuals_done;
 }
 
@@ -782,11 +796,20 @@ bool CRender::kt_LoadVisuals(IReader* fs, u32& index, float budget)
 	ogf_header H;
 	while ((chunk = fs->open_chunk(index)) != 0)
 	{
+		CTimer one;
+		one.Start();
 		chunk->r_chunk_safe(OGF_HEADER, &H, sizeof(H));
 		dxRender_Visual* V = Models->Instance_Create(H.type);
 		V->Load(0, chunk, 0);
 		if (kt_base_reading) Visuals[index] = V; // the level's own visuals back at their numbers
 		else Visuals.push_back(V);
+		{
+			const u32 shader = u32(H.shader_id) + (g_kt_chunk.loading ? kt_base_shader : 0);
+			const u32 kind = (H.type == MT_TREE_ST || H.type == MT_TREE_PM) ? kt_kind_trees : H.type == MT_LOD ? kt_kind_lod :
+				H.type == MT_HIERRARHY ? kt_kind_groups : (shader < kt_screen.size() && kt_screen[shader] == 2) ? kt_kind_terrain : kt_kind_static;
+			kt_kind_ms[kind] += one.GetElapsed_sec() * 1000.f;
+			kt_kind_n[kind]++;
+		}
 		chunk->close();
 		index++;
 		if (budget > 0.f && timer.GetElapsed_sec() * 1000.f >= budget)
@@ -1026,6 +1049,7 @@ bool CRender::kt_base_ahead(float budget)
 	if (B.done) return true;
 	CTimer timer;
 	timer.Start();
+	if (!B.steps) kt_kinds_reset();
 	kt_all_cut.swap(B.all_cut);
 	kt_base_reading = true;
 	IReader* chunk = B.fs->open_chunk(fsL_VISUALS);
@@ -1035,6 +1059,7 @@ bool CRender::kt_base_ahead(float budget)
 	kt_all_cut.swap(B.all_cut);
 	B.ms_visuals += timer.GetElapsed_ms();
 	B.steps++;
+	if (B.done) kt_kinds_report("the level itself");
 	return B.done;
 }
 
