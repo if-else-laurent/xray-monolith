@@ -332,6 +332,9 @@ public:
 	// whatever was read and not taken in.
 	virtual void kt_piece_stage(u32 piece) {}
 	virtual void kt_stage_drop() {}
+	// On the main thread while the swap waits: a piece (u32(-1): the level's own) put into the containers
+	// and its visuals read a few ms a frame; true when all is read and its coming in is a moment's work
+	virtual bool kt_piece_ahead(u32 piece) { return true; }
 	// what the renderer thinks of sectors where the camera is, into the log (console kt_piece)
 	virtual void kt_report() {}
 

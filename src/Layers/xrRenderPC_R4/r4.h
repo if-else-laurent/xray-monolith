@@ -208,6 +208,39 @@ public:
 	virtual void kt_stage_drop();
 	kt_staged* kt_stage_take(u32 piece);
 	void kt_stage_free(kt_staged* S);
+	// kt: a piece read by steps (kt_LoadChunk): what of it is in the containers, the file it is read from
+	struct kt_ahead_state
+	{
+		u32 piece;
+		IReader* fs;
+		u32 index; // the next visual to read
+		bool visuals_done;
+		u32 shader0, shader1, visual0, visual1, vb0, vb1, ib0, ib1, xvb0, xvb1, xib0, xib1;
+		xr_vector<FSlideWindowItem>* swis;
+		xr_vector<std::pair<u32, u32> > all_cut;
+		u32 ms_shaders, ms_buffers, ms_visuals, steps;
+	};
+	xr_vector<kt_ahead_state*> kt_ahead;
+	xr_vector<FSlideWindowItem>* kt_cur_swis; // the slide windows of the piece being read (getSWI)
+	kt_ahead_state* kt_ahead_of(u32 piece);
+	kt_ahead_state* kt_chunk_begin(u32 piece);
+	bool kt_chunk_visuals(kt_ahead_state& A, float budget);
+	void kt_chunk_end(kt_ahead_state& A);
+	void kt_ahead_enter(kt_ahead_state& A);
+	void kt_ahead_leave(kt_ahead_state& A);
+	void kt_ahead_drop();
+	bool kt_LoadVisuals(IReader* fs, u32& index, float budget);
+	virtual bool kt_piece_ahead(u32 piece);
+	struct kt_base_state
+	{
+		IReader* fs;
+		u32 index;
+		bool done;
+		xr_vector<std::pair<u32, u32> > all_cut;
+		u32 ms_begin, ms_visuals, steps;
+	} kt_base_st;
+	bool kt_base_ahead(float budget);
+	void kt_base_ahead_reset();
 	// materials made ahead by kt_piece_prepare, by the piece's own numbers (u32(-1): the level's own)
 	xr_map<u32, xr_vector<ref_shader> > kt_prep_by_piece;
 	virtual void kt_report();

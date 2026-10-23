@@ -161,6 +161,7 @@ void CRender::level_Unload()
 	Details->Unload();
 	kt_stage_drop(); // kt: buffers read ahead for a piece that did not come in
 	kt_prepare_reset();
+	kt_ahead_drop();
 
 	//*** Sectors
 	// 1.
@@ -517,32 +518,75 @@ void CRender::kt_CutScan(IReader* fs)
 // Seamless world experiment (kt). Reads the static geometry of one more level into the same
 // containers the current level uses and lets it be drawn as extra sectors without portals.
 // Left out on purpose: its lights, details, occluders, fog volumes and wallmarks.
+// A piece comes in by three steps: begun (its shaders, buffers and slide windows go to the ends of the
+// containers, nothing of it drawn yet), its visuals read a few per frame ahead (kt_piece_ahead) and
+// ended (its sectors: drawn from then on). The level's load and a piece taken in at once do all three.
 void CRender::kt_LoadChunk(u32 piece)
 {
+	kt_ahead_state* A = kt_chunk_begin(piece);
+	if (!A) return;
+	kt_chunk_visuals(*A, 0.f);
+	kt_chunk_end(*A);
+}
+
+CRender::kt_ahead_state* CRender::kt_ahead_of(u32 piece)
+{
+	for (u32 i = 0; i < kt_ahead.size(); i++)
+		if (kt_ahead[i]->piece == piece) return kt_ahead[i];
+	return nullptr;
+}
+
+// the numbers the piece's files are read by, back for one more step of its reading
+void CRender::kt_ahead_enter(kt_ahead_state& A)
+{
+	g_kt_chunk.select(A.piece);
+	kt_base_shader = A.shader0;
+	kt_base_visual = A.visual0;
+	kt_base_vb = A.vb0; kt_base_ib = A.ib0; kt_base_xvb = A.xvb0; kt_base_xib = A.xib0;
+	kt_cur_swis = A.swis;
+	kt_all_cut.swap(A.all_cut);
+	g_kt_chunk.loading = true; // on the main thread only, for this step
+}
+
+void CRender::kt_ahead_leave(kt_ahead_state& A)
+{
+	g_kt_chunk.loading = false;
+	kt_all_cut.swap(A.all_cut);
+}
+
+CRender::kt_ahead_state* CRender::kt_chunk_begin(u32 piece)
+{
+	if (kt_ahead_state* was = kt_ahead_of(piece)) return was;
 	g_kt_chunk.select(piece);
-	// the piece's slide windows: a vector of its own, the visuals keep pointers into it
-	kt_SWIs.push_back(xr_new<xr_vector<FSlideWindowItem> >());
 	string_path dir, file;
 	FS.update_path(dir, "$game_levels$", g_kt_chunk.name);
-
 	strconcat(sizeof(file), file, dir, "\\level");
 	IReader* fs = FS.r_open(file);
 	if (!fs)
 	{
 		Msg("! [kt chunk] cannot open %s", file);
-		return;
+		return nullptr;
 	}
-
+	kt_ahead_state* A = xr_new<kt_ahead_state>();
+	kt_ahead.push_back(A);
+	A->piece = piece;
+	A->fs = fs;
+	A->index = 0;
+	A->visuals_done = false;
+	A->ms_visuals = 0;
+	A->steps = 0;
 	CTimer kt_stage;
 	kt_stage.Start();
-	u32 kt_ms_shaders = 0, kt_ms_buffers = 0, kt_ms_visuals = 0;
-	kt_base_shader = u32(Shaders.size());
-	kt_base_visual = u32(Visuals.size());
-	kt_base_vb = u32(nVB.size());
-	kt_base_ib = u32(nIB.size());
-	kt_base_xvb = u32(xVB.size());
-	kt_base_xib = u32(xIB.size());
-	const u32 sector_base = u32(Sectors.size());
+	// the piece's slide windows: a vector of its own, the visuals keep pointers into it
+	kt_SWIs.push_back(xr_new<xr_vector<FSlideWindowItem> >());
+	A->swis = kt_SWIs.back();
+	A->shader0 = kt_base_shader = u32(Shaders.size());
+	A->visual0 = kt_base_visual = u32(Visuals.size());
+	A->vb0 = kt_base_vb = u32(nVB.size());
+	A->ib0 = kt_base_ib = u32(nIB.size());
+	A->xvb0 = kt_base_xvb = u32(xVB.size());
+	A->xib0 = kt_base_xib = u32(xIB.size());
+	kt_cur_swis = A->swis;
 	g_kt_chunk.loading = true;
 
 	// Shaders (see kt_shader_names). Made ahead by kt_piece_prepare, they are only looked up here.
@@ -564,7 +608,7 @@ void CRender::kt_LoadChunk(u32 piece)
 		}
 	}
 
-	kt_ms_shaders = kt_stage.GetElapsed_ms();
+	A->ms_shaders = kt_stage.GetElapsed_ms();
 	// Geometry: read ahead on the streaming thread (kt_piece_stage) and only put in place here, or read now
 	if (kt_staged* S = kt_stage_take(piece))
 	{
@@ -579,7 +623,7 @@ void CRender::kt_LoadChunk(u32 piece)
 		for (u32 i = 0; i < xib; i++) xIB[kt_base_xib + i] = S->xIB[i];
 		S->nVB.clear(); S->xVB.clear(); S->nIB.clear(); S->xIB.clear();
 		xr_delete(kt_SWIs.back());
-		kt_SWIs.back() = S->swis;
+		kt_SWIs.back() = A->swis = kt_cur_swis = S->swis;
 		S->swis = nullptr;
 		kt_all_cut.swap(S->all_cut);
 		Msg("* [kt chunk] buffers of %s were read ahead in %u ms: VB %u, IB %u", g_kt_chunk.name, S->ms, nvb, nib);
@@ -618,20 +662,44 @@ void CRender::kt_LoadChunk(u32 piece)
 		kt_cut_ranges.clear();
 		kt_local_ranges.clear();
 	}
+	A->ms_buffers = kt_stage.GetElapsed_ms() - A->ms_shaders;
+	A->shader1 = u32(Shaders.size());
+	A->vb1 = u32(nVB.size()); A->ib1 = u32(nIB.size()); A->xvb1 = u32(xVB.size()); A->xib1 = u32(xIB.size());
+	A->all_cut.clear();
+	kt_all_cut.swap(A->all_cut); // kept with the piece till its visuals are read
+	g_kt_chunk.loading = false;
+	return A;
+}
 
-	kt_ms_buffers = kt_stage.GetElapsed_ms();
-	// Visuals
-	{
-		IReader* chunk = fs->open_chunk(fsL_VISUALS);
-		LoadVisuals(chunk);
-		chunk->close();
-	}
-	kt_ms_visuals = kt_stage.GetElapsed_ms();
+// Some of the piece's visuals, for at most `budget` ms (0: all that are left). True when all are read.
+bool CRender::kt_chunk_visuals(kt_ahead_state& A, float budget)
+{
+	if (A.visuals_done) return true;
+	CTimer timer;
+	timer.Start();
+	kt_ahead_enter(A);
+	IReader* chunk = A.fs->open_chunk(fsL_VISUALS);
+	A.visuals_done = kt_LoadVisuals(chunk, A.index, budget);
+	chunk->close();
+	kt_ahead_leave(A);
+	A.ms_visuals += timer.GetElapsed_ms();
+	A.steps++;
+	if (A.visuals_done) A.visual1 = u32(Visuals.size());
+	return A.visuals_done;
+}
 
+void CRender::kt_chunk_end(kt_ahead_state& A)
+{
+	kt_chunk_visuals(A, 0.f);
+	CTimer kt_stage;
+	kt_stage.Start();
+	const u32 piece = A.piece;
+	const u32 sector_base = u32(Sectors.size());
+	kt_ahead_enter(A);
 	// Sectors: only their root visuals. The chunk's portals are not read: its sectors are drawn
 	// whenever the view sees them (CDSGraphManager::traverse).
 	{
-		IReader* S = fs->open_chunk(fsL_SECTORS);
+		IReader* S = A.fs->open_chunk(fsL_SECTORS);
 		for (u32 i = 0; ; i++)
 		{
 			IReader* P = S->open_chunk(i);
@@ -646,9 +714,8 @@ void CRender::kt_LoadChunk(u32 piece)
 		}
 		S->close();
 	}
-
-	g_kt_chunk.loading = false;
-	FS.r_close(fs);
+	kt_ahead_leave(A);
+	FS.r_close(A.fs);
 
 	// The chunk's collision triangles name its sectors by its own numbers.
 	CDB::TRI* tris = g_pGameLevel->ObjectSpace.GetStaticTris();
@@ -664,19 +731,85 @@ void CRender::kt_LoadChunk(u32 piece)
 	}
 	kt_loaded_piece& L = kt_loaded[piece];
 	L.on = true;
-	L.shader0 = kt_base_shader; L.shader1 = u32(Shaders.size());
-	L.visual0 = kt_base_visual; L.visual1 = u32(Visuals.size());
-	L.vb0 = kt_base_vb; L.vb1 = u32(nVB.size());
-	L.ib0 = kt_base_ib; L.ib1 = u32(nIB.size());
-	L.xvb0 = kt_base_xvb; L.xvb1 = u32(xVB.size());
-	L.xib0 = kt_base_xib; L.xib1 = u32(xIB.size());
+	L.shader0 = A.shader0; L.shader1 = A.shader1;
+	L.visual0 = A.visual0; L.visual1 = A.visual1;
+	L.vb0 = A.vb0; L.vb1 = A.vb1;
+	L.ib0 = A.ib0; L.ib1 = A.ib1;
+	L.xvb0 = A.xvb0; L.xvb1 = A.xvb1;
+	L.xib0 = A.xib0; L.xib1 = A.xib1;
 	L.sector0 = sector_base; L.sector1 = u32(Sectors.size());
-	L.swis = kt_SWIs.back();
+	L.swis = A.swis;
 
-	Msg("* [kt time] render of %s by stages: shaders %u, buffers %u, visuals %u, the rest %u ms", P.name, kt_ms_shaders,
-	    kt_ms_buffers - kt_ms_shaders, kt_ms_visuals - kt_ms_buffers, kt_stage.GetElapsed_ms() - kt_ms_visuals);
-	Msg("* [kt chunk] render of %s: %u shaders, %u visuals, %u sectors, VB %u, IB %u", P.name, u32(Shaders.size()) - kt_base_shader,
-	    u32(Visuals.size()) - kt_base_visual, u32(Sectors.size()) - sector_base, u32(nVB.size()) - kt_base_vb, u32(nIB.size()) - kt_base_ib);
+	Msg("* [kt time] render of %s by stages: shaders %u, buffers %u, visuals %u (in %u steps), the rest %u ms", P.name, A.ms_shaders,
+	    A.ms_buffers, A.ms_visuals, A.steps, kt_stage.GetElapsed_ms());
+	Msg("* [kt chunk] render of %s: %u shaders, %u visuals, %u sectors, VB %u, IB %u", P.name, A.shader1 - A.shader0,
+	    A.visual1 - A.visual0, L.sector1 - L.sector0, A.vb1 - A.vb0, A.ib1 - A.ib0);
+	for (u32 i = 0; i < kt_ahead.size(); i++)
+		if (kt_ahead[i] == &A)
+		{
+			kt_ahead.erase(kt_ahead.begin() + i);
+			break;
+		}
+	kt_ahead_state* gone = &A;
+	xr_delete(gone);
+}
+
+// A piece's (u32(-1): the level's own) reading on its way in, a step a frame on the main thread while
+// its buffers are ready and the swap is not yet: begun, then its visuals a few ms a frame. True when
+// all its visuals are read; kt_piece_render / kt_base_render end it then in a moment.
+bool CRender::kt_piece_ahead(u32 piece)
+{
+	const float budget = 4.f;
+	if (piece == u32(-1)) return kt_base_ahead(budget);
+	kt_ahead_state* A = kt_ahead_of(piece);
+	if (!A)
+	{
+		CTimer timer;
+		timer.Start();
+		A = kt_chunk_begin(piece);
+		if (!A) return true;
+		if (timer.GetElapsed_ms() >= budget) return false; // the visuals from the next frame
+	}
+	return kt_chunk_visuals(*A, budget);
+}
+
+// LoadVisuals from `index` on, for at most `budget` ms (0: to the end). True when the end is reached.
+bool CRender::kt_LoadVisuals(IReader* fs, u32& index, float budget)
+{
+	CTimer timer;
+	timer.Start();
+	IReader* chunk = 0;
+	ogf_header H;
+	while ((chunk = fs->open_chunk(index)) != 0)
+	{
+		chunk->r_chunk_safe(OGF_HEADER, &H, sizeof(H));
+		dxRender_Visual* V = Models->Instance_Create(H.type);
+		V->Load(0, chunk, 0);
+		if (kt_base_reading) Visuals[index] = V; // the level's own visuals back at their numbers
+		else Visuals.push_back(V);
+		chunk->close();
+		index++;
+		if (budget > 0.f && timer.GetElapsed_sec() * 1000.f >= budget)
+		{
+			IReader* next = fs->open_chunk(index);
+			if (!next) return true;
+			next->close();
+			return false;
+		}
+	}
+	return true;
+}
+
+void CRender::kt_ahead_drop()
+{
+	// the level unloads with pieces half read: what of them is in the containers goes with them
+	for (u32 i = 0; i < kt_ahead.size(); i++)
+	{
+		FS.r_close(kt_ahead[i]->fs);
+		xr_delete(kt_ahead[i]);
+	}
+	kt_ahead.clear();
+	kt_base_ahead_reset();
 }
 
 // Seamless world experiment (kt): a piece taken out on the move. Its places in the containers stay
@@ -778,76 +911,10 @@ void CRender::kt_base_render(bool on)
 		return;
 	}
 	if (kt_base_on) return;
-	IReader* fs = FS.r_open("$level$", "level");
-	R_ASSERT2(fs, "kt: the level file");
-	IReader* chunk;
-	{
-		chunk = fs->open_chunk(fsL_SHADERS);
-		u32 count = chunk->r_u32();
-		xr_map<u32, xr_vector<ref_shader> >::iterator made = kt_prep_by_piece.find(u32(-1));
-		const bool ahead = made != kt_prep_by_piece.end() && made->second.size() == count;
-		for (u32 i = 0; i < count && i < kt_base.shaders; i++)
-		{
-			if (ahead && made->second[i])
-			{
-				chunk->skip_stringZ();
-				Shaders[i] = made->second[i];
-				continue;
-			}
-			string512 n_sh, n_tlist;
-			LPCSTR n = LPCSTR(chunk->pointer());
-			chunk->skip_stringZ();
-			if (0 == n[0]) continue;
-			xr_strcpy(n_sh, n);
-			LPSTR delim = strchr(n_sh, '/');
-			*delim = 0;
-			xr_strcpy(n_tlist, delim + 1);
-			Shaders[i] = dxRenderDeviceRender::Instance().Resources->Create(n_sh, n_tlist);
-		}
-		chunk->close();
-	}
-	kt_base_reading = true;
-	if (kt_staged* S = kt_stage_take(u32(-1)))
-	{
-		// read ahead on the streaming thread: back to the level's own places at the starts of the containers
-		const u32 nvb = u32(S->nVB.size()), xvb = u32(S->xVB.size()), nib = u32(S->nIB.size()), xib = u32(S->xIB.size());
-		R_ASSERT2(nvb <= nVB.size() && xvb <= xVB.size() && nib <= nIB.size() && xib <= xIB.size(), "kt: the level's own buffers read ahead do not fit their places");
-		for (u32 i = 0; i < nvb; i++) { nDC[i] = S->nDC[i]; nVB[i] = S->nVB[i]; }
-		for (u32 i = 0; i < xvb; i++) { xDC[i] = S->xDC[i]; xVB[i] = S->xVB[i]; }
-		for (u32 i = 0; i < nib; i++) nIB[i] = S->nIB[i];
-		for (u32 i = 0; i < xib; i++) xIB[i] = S->xIB[i];
-		S->nVB.clear(); S->xVB.clear(); S->nIB.clear(); S->xIB.clear();
-		for (u32 i = 0; i < SWIs.size(); i++) xr_free(SWIs[i].sw);
-		SWIs.swap(*S->swis);
-		S->swis->clear();
-		kt_all_cut.swap(S->all_cut);
-		Msg("* [kt chunk] buffers of the level itself were read ahead in %u ms: VB %u, IB %u", S->ms, nvb, nib);
-		kt_stage_free(S);
-	}
-	else
-	{
-		chunk = fs->open_chunk(fsL_VISUALS);
-		kt_CutScan(chunk);
-		chunk->close();
-		{
-			CStreamReader* geom = FS.rs_open("$level$", "level.geom");
-			R_ASSERT2(geom, "level.geom");
-			LoadBuffers(geom, FALSE);
-			LoadSWIs(geom);
-			FS.r_close(geom);
-		}
-		{
-			CStreamReader* geom = FS.rs_open("$level$", "level.geomx");
-			R_ASSERT2(geom, "level.geomX");
-			LoadBuffers(geom, TRUE);
-			FS.r_close(geom);
-		}
-	}
-	kt_cut_ranges.clear();
-	chunk = fs->open_chunk(fsL_VISUALS);
-	LoadVisuals(chunk);
-	chunk->close();
-	kt_base_reading = false;
+	kt_base_ahead(0.f); // whatever is not read ahead yet
+	CTimer kt_stage;
+	kt_stage.Start();
+	IReader* fs = kt_base_st.fs;
 	{
 		IReader* S = fs->open_chunk(fsL_SECTORS);
 		for (I = 0; I < kt_base.sectors; I++)
@@ -860,16 +927,128 @@ void CRender::kt_base_render(bool on)
 		}
 		S->close();
 	}
-	FS.r_close(fs);
+	const u32 ms_sectors = kt_stage.GetElapsed_ms();
 	HOM.Load();
+	const u32 ms_hom = kt_stage.GetElapsed_ms() - ms_sectors;
 	kt_base_on = true;
 	kt_forget_statics();
+	Msg("* [kt time] render of the level itself by stages: shaders and buffers %u, visuals %u (in %u steps), sectors %u, occluders %u, the rest %u ms",
+	    kt_base_st.ms_begin, kt_base_st.ms_visuals, kt_base_st.steps, ms_sectors, ms_hom, kt_stage.GetElapsed_ms() - ms_sectors - ms_hom);
+	kt_base_ahead_reset();
 	Msg("* [kt chunk] render of the level itself is read again: %u visuals", kt_base.visuals);
+}
+
+// The level's own geometry read again by steps, as a piece's (kt_piece_ahead): its shaders and buffers
+// back in their places, then its visuals back at their numbers a few ms a frame. Nothing of it is drawn
+// till kt_base_render(true) gives its sectors their roots again.
+bool CRender::kt_base_ahead(float budget)
+{
+	if (kt_base_on) return true;
+	kt_base_state& B = kt_base_st;
+	if (!B.fs)
+	{
+		CTimer timer;
+		timer.Start();
+		IReader* fs = B.fs = FS.r_open("$level$", "level");
+		R_ASSERT2(fs, "kt: the level file");
+		B.index = 0;
+		B.done = false;
+		B.steps = 0;
+		B.ms_visuals = 0;
+		IReader* chunk;
+		{
+			chunk = fs->open_chunk(fsL_SHADERS);
+			u32 count = chunk->r_u32();
+			xr_map<u32, xr_vector<ref_shader> >::iterator made = kt_prep_by_piece.find(u32(-1));
+			const bool ahead = made != kt_prep_by_piece.end() && made->second.size() == count;
+			for (u32 i = 0; i < count && i < kt_base.shaders; i++)
+			{
+				if (ahead && made->second[i])
+				{
+					chunk->skip_stringZ();
+					Shaders[i] = made->second[i];
+					continue;
+				}
+				string512 n_sh, n_tlist;
+				LPCSTR n = LPCSTR(chunk->pointer());
+				chunk->skip_stringZ();
+				if (0 == n[0]) continue;
+				xr_strcpy(n_sh, n);
+				LPSTR delim = strchr(n_sh, '/');
+				*delim = 0;
+				xr_strcpy(n_tlist, delim + 1);
+				Shaders[i] = dxRenderDeviceRender::Instance().Resources->Create(n_sh, n_tlist);
+			}
+			chunk->close();
+		}
+		if (kt_staged* S = kt_stage_take(u32(-1)))
+		{
+			// read ahead on the streaming thread: back to the level's own places at the starts of the containers
+			const u32 nvb = u32(S->nVB.size()), xvb = u32(S->xVB.size()), nib = u32(S->nIB.size()), xib = u32(S->xIB.size());
+			R_ASSERT2(nvb <= nVB.size() && xvb <= xVB.size() && nib <= nIB.size() && xib <= xIB.size(), "kt: the level's own buffers read ahead do not fit their places");
+			for (u32 i = 0; i < nvb; i++) { nDC[i] = S->nDC[i]; nVB[i] = S->nVB[i]; }
+			for (u32 i = 0; i < xvb; i++) { xDC[i] = S->xDC[i]; xVB[i] = S->xVB[i]; }
+			for (u32 i = 0; i < nib; i++) nIB[i] = S->nIB[i];
+			for (u32 i = 0; i < xib; i++) xIB[i] = S->xIB[i];
+			S->nVB.clear(); S->xVB.clear(); S->nIB.clear(); S->xIB.clear();
+			for (u32 i = 0; i < SWIs.size(); i++) xr_free(SWIs[i].sw);
+			SWIs.swap(*S->swis);
+			S->swis->clear();
+			kt_all_cut.swap(S->all_cut);
+			Msg("* [kt chunk] buffers of the level itself were read ahead in %u ms: VB %u, IB %u", S->ms, nvb, nib);
+			kt_stage_free(S);
+		}
+		else
+		{
+			chunk = fs->open_chunk(fsL_VISUALS);
+			kt_CutScan(chunk);
+			chunk->close();
+			{
+				CStreamReader* geom = FS.rs_open("$level$", "level.geom");
+				R_ASSERT2(geom, "level.geom");
+				LoadBuffers(geom, FALSE);
+				LoadSWIs(geom);
+				FS.r_close(geom);
+			}
+			{
+				CStreamReader* geom = FS.rs_open("$level$", "level.geomx");
+				R_ASSERT2(geom, "level.geomX");
+				LoadBuffers(geom, TRUE);
+				FS.r_close(geom);
+			}
+		}
+		kt_cut_ranges.clear();
+		B.all_cut.clear();
+		kt_all_cut.swap(B.all_cut);
+		B.ms_begin = timer.GetElapsed_ms();
+		if (budget > 0.f && B.ms_begin >= budget) return false;
+	}
+	if (B.done) return true;
+	CTimer timer;
+	timer.Start();
+	kt_all_cut.swap(B.all_cut);
+	kt_base_reading = true;
+	IReader* chunk = B.fs->open_chunk(fsL_VISUALS);
+	B.done = kt_LoadVisuals(chunk, B.index, budget);
+	chunk->close();
+	kt_base_reading = false;
+	kt_all_cut.swap(B.all_cut);
+	B.ms_visuals += timer.GetElapsed_ms();
+	B.steps++;
+	return B.done;
+}
+
+void CRender::kt_base_ahead_reset()
+{
+	if (kt_base_st.fs) FS.r_close(kt_base_st.fs);
+	kt_base_st.fs = nullptr;
+	kt_base_st.done = false;
+	kt_base_st.all_cut.clear();
 }
 
 void CRender::kt_piece_render(u32 piece, bool on)
 {
-	if (on) kt_LoadChunk(piece);
+	if (on) kt_LoadChunk(piece); // ends what kt_piece_ahead began
 	else kt_UnloadChunk(piece);
 	kt_forget_statics();
 }

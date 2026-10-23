@@ -785,7 +785,7 @@ ID3DIndexBuffer* CRender::getIB(int id, BOOL _alt)
 
 FSlideWindowItem* CRender::getSWI(int id)
 {
-	if (g_kt_chunk.loading) return &(*kt_SWIs.back())[id];
+	if (g_kt_chunk.loading) return &(*kt_cur_swis)[id];
 	VERIFY(id<int(SWIs.size()));
 	return &SWIs[id];
 }
@@ -902,8 +902,10 @@ void CRender::rmNormal()
 // Construction/Destruction
 //////////////////////////////////////////////////////////////////////
 CRender::CRender()
-	: m_bFirstFrameAfterReset(false), kt_stage_into(nullptr), kt_stage_thread(0)
+	: m_bFirstFrameAfterReset(false), kt_stage_into(nullptr), kt_stage_thread(0), kt_cur_swis(nullptr)
 {
+	kt_base_st.fs = nullptr;
+	kt_base_st.done = false;
 	init_cacades();
 }
 

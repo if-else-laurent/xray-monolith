@@ -393,14 +393,19 @@ IGame_Level::IGame_Level()
 static CDB::MODEL* kt_fresh;
 static xr_atomic_u32 kt_stream_state;
 static xr_task_group kt_stream_task;
+// the buffers of the pieces on their way in, read beside the collision model (kt_piece_stage): 1 reading, 2 read
+static xr_atomic_u32 kt_stage_state;
+static xr_task_group kt_stage_task;
 
 IGame_Level::~IGame_Level()
 {
 	Device.secondary_tasks.wait();
 	// seamless world experiment (kt): a collision model being built aside
 	kt_stream_task.wait();
+	kt_stage_task.wait();
 	xr_delete(kt_fresh);
 	kt_stream_state = 0;
+	kt_stage_state = 0;
 
 	if (Core.ParamsData.test(ECoreParams::nes_texture_storing))
 		Device.m_pRender->ResourcesStoreNecessaryTextures();
@@ -572,30 +577,31 @@ void IGame_Level::kt_stream_tick()
 		kt_stream_task.run([this]()
 		{
 			ObjectSpace.kt_BuildModel(*kt_fresh, kt_stream_job_base, kt_cform_built, kt_stream_job, kt_cform_cut);
-			// the geometry buffers of the pieces on their way in are read and made here, the main thread
-			// only puts them in place; the level file it still reads (visuals, sectors) into the system's cache
+			kt_stream_state = 2;
+		});
+		// beside it: the geometry buffers of the pieces on their way in (and of the level itself) read and
+		// made, the main thread only puts them in place; the level file it still reads into the system's cache
+		kt_stage_state = 1;
+		kt_stage_task.run([]()
+		{
 			for (u32 n = 0; n < kt_stream_job.size(); n++)
 			{
 				const KtPiece& P = g_kt_chunk.pieces[kt_stream_job[n].piece];
 				if (P.loaded) continue;
 				Render->kt_piece_stage(kt_stream_job[n].piece);
-				static const LPCSTR files[1] = {"\\level"};
-				for (u32 f = 0; f < 1; f++)
-				{
-					string_path file;
-					FS.update_path(file, "$game_levels$", P.name);
-					xr_strcat(file, files[f]);
-					if (!FS.exist(file)) continue;
-					IReader* R = FS.r_open(file);
-					if (!R) continue;
-					const u8* data = (const u8*)R->pointer();
-					volatile u32 sum = 0;
-					for (int at = 0, size = R->length(); at < size; at += 4096) sum += data[at];
-					FS.r_close(R);
-				}
+				string_path file;
+				FS.update_path(file, "$game_levels$", P.name);
+				xr_strcat(file, "\\level");
+				if (!FS.exist(file)) continue;
+				IReader* R = FS.r_open(file);
+				if (!R) continue;
+				const u8* data = (const u8*)R->pointer();
+				volatile u32 sum = 0;
+				for (int at = 0, size = R->length(); at < size; at += 4096) sum += data[at];
+				FS.r_close(R);
 			}
 			if (kt_stream_job_base && !g_kt_chunk.base_loaded) Render->kt_piece_stage(u32(-1));
-			kt_stream_state = 2;
+			kt_stage_state = 2;
 		});
 		return;
 	}
@@ -610,9 +616,17 @@ void IGame_Level::kt_stream_tick()
 		}
 	// and the level's own, when it is to come back (it had none made ahead: 0,65 s of it on the main thread)
 	if (prepared && kt_stream_job_base && !g_kt_chunk.base_loaded && !Render->kt_piece_prepare(u32(-1))) prepared = false;
-	if (kt_stream_state != 2 || !prepared) return;
+	if (!prepared || kt_stage_state != 2) return;
+	// the buffers are made: the pieces go into the containers and their visuals are read, a few ms a frame,
+	// one piece after another; nothing of them is drawn yet
+	for (u32 n = 0; n < kt_stream_job.size(); n++)
+		if (!pieces[kt_stream_job[n].piece].loaded && !Render->kt_piece_ahead(kt_stream_job[n].piece)) return;
+	if (kt_stream_job_base && !g_kt_chunk.base_loaded && !Render->kt_piece_ahead(u32(-1))) return;
+	if (kt_stream_state != 2) return;
 
 	kt_stream_task.wait();
+	kt_stage_task.wait();
+	kt_stage_state = 0;
 	Device.secondary_tasks.wait(); // nobody else is to be inside the model or the geometry now
 	const u32 built_ms = kt_stream_timer.GetElapsed_ms();
 	CTimer timer;
