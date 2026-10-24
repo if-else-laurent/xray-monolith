@@ -220,12 +220,7 @@ void CUICustomMap::SetActivePoint(const Fvector& vNewPoint)
 	Fvector2 pos;
 	pos.set(vNewPoint.x, vNewPoint.z);
 	Frect bound = BoundRect();
-	// Seamless world (kt): the actor's location is the level of the world graph, and our land between
-	// levels (Meadow tube 1 is Cordon's, x 580 against its map's 415) lies outside that level's map.
-	// Returning there left the map and its pivot where they were - after a change of location, the
-	// pivot of the previous map: the task pointer is put around the pivot, so it hung mid-screen (#191).
-	// The map is moved under the actor wherever he is; Draw leaves out the picture there.
-	if (FALSE == bound.in(pos) && !Level().kt_level_in_world(*MapName())) return;
+	if (FALSE == bound.in(pos))return;
 
 	Fvector2 pos_on_map = ConvertRealToLocalNoTransform(pos, BoundRect());
 	Frect map_abs_rect;
@@ -612,14 +607,6 @@ void CUIMiniMap::Draw()
 	if (!IsRounded())
 	{
 		inherited::Draw();
-		return;
-	}
-
-	// seamless world (kt): the actor is off this map's picture (SetActivePoint) - no picture, only spots
-	const Fvector2 kt_pivot = m_UIStaticItem.GetHeadingPivot();
-	if (kt_pivot.x < 0.f || kt_pivot.y < 0.f || kt_pivot.x > GetWidth() || kt_pivot.y > GetHeight())
-	{
-		CUIWindow::Draw();
 		return;
 	}
 
