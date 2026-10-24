@@ -541,7 +541,7 @@ float kt_location_depth()
 	return g_kt_chunk.active ? g_kt_chunk.location_depth : 0.f;
 }
 
-// The minimap's probe (#191): "dx dy inside location" - see CUIZoneMap::kt_probe; empty without the HUD.
+// The minimap's probe (#191): "dx dy pivot inside location" - see CUIZoneMap::kt_probe; empty without the HUD.
 LPCSTR kt_minimap()
 {
 	static shared_str s;

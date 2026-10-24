@@ -197,21 +197,28 @@ void CUIZoneMap::UpdateRadar(Fvector pos)
 }
 
 // seamless world (kt), the probe of #191: pixels from the centre of the minimap's circle to where the
-// map puts the actor (its heading pivot) - spots and the task pointer stand around that point; 0 0 when
-// the map follows him. Then 1 when the actor is within the map's bound rect, and the map's level.
+// actor really is on the map as it is drawn now (its window, his position) - 0 0 when the map follows
+// him; then pixels from the map's heading pivot (spots and the task pointer stand around it) to that
+// same place; 1 when the actor is within the map's bound rect, and the map's level. A map left where it
+// was gives the first, a pivot of another map the second.
 shared_str CUIZoneMap::kt_probe()
 {
 	Frect map_abs;
 	m_activeMap->GetAbsoluteRect(map_abs);
-	Fvector2 actor = m_activeMap->GetStaticItem()->GetHeadingPivot();
+	Fvector p = Device.vCameraPosition;
+	p.sub(Level().kt_level_offset(*m_kt_location));
+	const Fvector2 real = Fvector2().set(p.x, p.z);
+	const Fvector2 on_map = m_activeMap->ConvertRealToLocalNoTransform(real, m_activeMap->BoundRect());
+	Fvector2 actor = on_map;
 	actor.add(map_abs.lt);
 	Fvector2 centre;
 	m_activeMap->WorkingArea().getcenter(centre);
-	Fvector p = Device.vCameraPosition;
-	p.sub(Level().kt_level_offset(*m_kt_location));
-	const bool inside = !!m_activeMap->BoundRect().in(Fvector2().set(p.x, p.z));
+	const Fvector2 pivot = m_activeMap->GetStaticItem()->GetHeadingPivot();
+	Fvector2 inside_test = real;
+	const bool inside = !!m_activeMap->BoundRect().in(inside_test);
 	string256 s;
-	xr_sprintf(s, "%.1f %.1f %d %s", actor.x - centre.x, actor.y - centre.y, inside ? 1 : 0, m_kt_location.c_str());
+	xr_sprintf(s, "%.1f %.1f %.1f %d %s", actor.x - centre.x, actor.y - centre.y, pivot.distance_to(on_map),
+	           inside ? 1 : 0, m_kt_location.c_str());
 	return shared_str(s);
 }
 
