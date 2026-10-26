@@ -123,6 +123,7 @@ void CAI_Space::load(LPCSTR level_name)
 		game_graph().kt_cross_cells(level_graph(), cells);
 		const_cast<CGameLevelCrossTable&>(cross_table()).kt_extend(level_graph().header().vertex_count(), &cells[0]);
 		const_cast<CGameGraph&>(game_graph()).kt_place(level_graph());
+		game_graph().kt_way_cells(level_graph(), const_cast<CGameLevelCrossTable&>(cross_table()));
 		if (m_patrol_path_storage)
 			m_patrol_path_storage->kt_place(game_graph(), level_graph());
 	}
@@ -178,24 +179,76 @@ void CGameGraph::kt_claim()
 	if (base < 0) return;
 
 	// the file's memory is not ours to write into; room after it for the edges added (-kt_graph_edge):
-	// a vertex that gets one has its whole list written anew there
+	// a vertex that gets one has its whole list written anew there. The vertices added
+	// (-kt_graph_vertex) go after the file's, the file's edges and death points after them, a death
+	// point for each added vertex after those (an offline death or a spawn at a vertex takes one).
 #pragma pack(push,1)
 	struct kt_edge_rec { u16 vertex; float distance; };
 #pragma pack(pop)
-	const u32 count = header().vertex_count();
-	const u32 size = u32((u8*)m_cross_tables - (u8*)m_nodes);
-	u32 extra = 0;
-	for (u32 n = 0; n < g_kt_chunk.graph_edges.size(); n++)
-		for (int side = 0; side < 2; side++)
+	const u32 file_count = header().vertex_count();
+	m_kt_file_count = file_count;
+	u32 added = 0;
+	for (u32 n = 0; n < g_kt_chunk.graph_vertices.size(); n++)
+	{
+		const KtChunk::GraphVertex& G = g_kt_chunk.graph_vertices[n];
+		if (G.vertex != file_count + added || G.like >= file_count || file_count + added >= 0xfffe)
 		{
-			const u32 v = side ? g_kt_chunk.graph_edges[n].b : g_kt_chunk.graph_edges[n].a;
-			if (v < count) extra += (u32(m_nodes[v].tNeighbourCount) + 1) * sizeof(kt_edge_rec);
+			Msg("! [kt world] the world graph: vertex %u is not added (the next number is %u, its like %u of %u); nor are those after it",
+			    G.vertex, file_count + added, G.like, file_count);
+			break;
 		}
+		added++;
+	}
+	const u32 count = file_count + added;
+	const u32 shift = added * sizeof(CVertex);
+	const u32 size = u32((u8*)m_cross_tables - (u8*)m_nodes) + shift;
+	const u32 points_at = size;
+	u32 extra = added * sizeof(CLevelPoint);
+	{
+		xr_vector<u32> grown(count, 0);
+		for (u32 n = 0; n < g_kt_chunk.graph_edges.size(); n++)
+			for (int side = 0; side < 2; side++)
+			{
+				const u32 v = side ? g_kt_chunk.graph_edges[n].b : g_kt_chunk.graph_edges[n].a;
+				if (v < count) extra += ((v < file_count ? u32(m_nodes[v].tNeighbourCount) : 0) + ++grown[v]) * sizeof(kt_edge_rec);
+			}
+	}
 	xr_free(m_kt_nodes);
 	m_kt_nodes = xr_alloc<u8>(size + extra);
-	CopyMemory(m_kt_nodes, m_nodes, size);
+	CopyMemory(m_kt_nodes, m_nodes, file_count * sizeof(CVertex));
+	CopyMemory(m_kt_nodes + count * sizeof(CVertex), (u8*)m_nodes + file_count * sizeof(CVertex), size - count * sizeof(CVertex));
 	m_nodes = (CVertex*)m_kt_nodes;
-	u32 tail = size;
+	if (added)
+	{
+		for (u32 i = 0; i < file_count; i++)
+		{
+			m_nodes[i].dwEdgeOffset += shift;
+			m_nodes[i].dwPointOffset += shift;
+		}
+		for (u32 n = 0; n < added; n++)
+		{
+			const KtChunk::GraphVertex& G = g_kt_chunk.graph_vertices[n];
+			CVertex& V = m_nodes[file_count + n];
+			V = m_nodes[G.like];
+			V.tLocalPoint = G.point;
+			V.tLevelID = u8(base);
+			V.tNodeID = 0; // kt_place puts it on the node at its point
+			V.tNeighbourCount = 0;
+			V.dwEdgeOffset = points_at;
+			V.dwPointOffset = points_at + n * sizeof(CLevelPoint);
+			V.tDeathPointCount = 1;
+			u8* point = m_kt_nodes + V.dwPointOffset;
+			*(Fvector*)point = G.point;
+			*(u32*)(point + sizeof(Fvector)) = 0;
+			*(float*)(point + sizeof(Fvector) + sizeof(u32)) = 0.f;
+			Msg("* [kt world] the world graph: vertex %u is added at %.1f, %.1f, %.1f, its kinds of place those of %u (-kt_graph_vertex)",
+			    file_count + n, VPUSH(G.point), G.like);
+		}
+		m_header.m_vertex_count = _GRAPH_ID(count);
+		m_header.m_death_point_count += added;
+		m_enabled.assign(count, true);
+	}
+	u32 tail = size + added * sizeof(CLevelPoint);
 	for (u32 n = 0; n < g_kt_chunk.graph_drops.size(); n++)
 		for (int side = 0; side < 2; side++)
 		{
@@ -259,6 +312,10 @@ void CGameGraph::kt_claim()
 		m_nodes[i].tLevelID = u8(base);
 		claimed++;
 	}
+	// an added vertex is on the base level and its point is the world's, never moved (no chunk); the
+	// level it is told to be in (names, maps, the location the actor is in) is its like's
+	for (u32 n = 0; n < added; n++)
+		m_kt_level[file_count + n] = m_kt_level[g_kt_chunk.graph_vertices[n].like];
 	Msg("* [kt world] %u vertices of the world graph now belong to %s", claimed, g_kt_chunk.base);
 
 	// The edges between the world's levels. The points are still the levels' own here (kt_place
@@ -372,6 +429,21 @@ void CGameGraph::kt_place(const CLevelGraph& level_graph)
 		m_nodes[A.vertex].tLocalPoint = A.point;
 		m_nodes[A.vertex].tNodeID = node;
 	}
+	// -kt_graph_vertex: the vertices added stand on the node at their point, their death point too
+	for (u32 i = m_kt_file_count, count = header().vertex_count(); i < count; i++)
+	{
+		const Fvector& P = m_nodes[i].tLocalPoint;
+		u32 node = level_graph.valid_vertex_position(P) ? level_graph.vertex_id(P) : u32(-1);
+		if (!level_graph.valid_vertex_id(node))
+		{
+			Msg("! [kt world] the world graph: added vertex %u at %.1f, %.1f, %.1f has no node there", i, VPUSH(P));
+			node = 0;
+		}
+		else
+			Msg("* [kt world] the world graph: added vertex %u is on node %u, %.1f m off it", i, node, level_graph.vertex_position(node).distance_to(P));
+		m_nodes[i].tNodeID = node;
+		*(u32*)((u8*)m_nodes + m_nodes[i].dwPointOffset + sizeof(Fvector)) = node;
+	}
 	// The points of the vertices where those who die offline are put (death points): each has a
 	// place and a node in its level's own numbers too. They lie after the edges, in our copy.
 	u32 points = 0, points_lost = 0;
@@ -404,6 +476,74 @@ void CGameGraph::kt_place(const CLevelGraph& level_graph)
 	m_kt_placed = true;
 	Msg("* [kt world] %u vertices of the world graph moved into the world, %u without a node; %u death points, %u without a node",
 	    moved, lost, points, points_lost);
+}
+
+void CGameGraph::kt_way_cells(const CLevelGraph& level_graph, CGameLevelCrossTable& cross) const
+{
+	const u32 count = header().vertex_count();
+	if (m_kt_file_count >= count) return;
+	// The lines of the edges an added vertex has (-kt_graph_line, cut at the added vertices). A node
+	// within a few metres of one takes the end of that edge nearer along the line: online a squad
+	// walking a seam's way of hundreds of metres had one vertex all the way, the nodes of the corridor
+	// pointing to its far end or to the levels' vertices around (#244).
+	const float across = 15.f, up = 6.f;
+	xr_vector<const KtChunk::GraphLine*> lines;
+	Fbox box;
+	box.invalidate();
+	for (u32 i = m_kt_file_count; i < count; i++)
+	{
+		const_iterator I, E;
+		begin(i, I, E);
+		for (; I != E; ++I)
+		{
+			bool reversed;
+			const KtChunk::GraphLine* L = g_kt_chunk.graph_line(i, value(i, I), reversed);
+			if (!L || std::find(lines.begin(), lines.end(), L) != lines.end()) continue;
+			lines.push_back(L);
+			for (u32 k = 0; k < L->points.size(); k++) box.modify(L->points[k]);
+		}
+	}
+	if (lines.empty()) return;
+	box.grow(across);
+	u32 changed = 0, along_lines = 0;
+	for (u32 node = 0, nodes = level_graph.header().vertex_count(); node < nodes; node++)
+	{
+		const Fvector P = level_graph.vertex_position(node);
+		if (P.x < box.min.x || P.x > box.max.x || P.z < box.min.z || P.z > box.max.z) continue;
+		const KtChunk::GraphLine* best = 0;
+		float best_d = across, best_along = 0.f;
+		for (u32 l = 0; l < lines.size(); l++)
+		{
+			const KtChunk::GraphLine& L = *lines[l];
+			float walked = 0.f;
+			for (u32 k = 0; k + 1 < L.points.size(); k++)
+			{
+				const Fvector& A = L.points[k];
+				const Fvector& B = L.points[k + 1];
+				const float dx = B.x - A.x, dz = B.z - A.z, len2 = dx * dx + dz * dz;
+				float t = len2 > EPS_L ? ((P.x - A.x) * dx + (P.z - A.z) * dz) / len2 : 0.f;
+				clamp(t, 0.f, 1.f);
+				const float x = A.x + dx * t, z = A.z + dz * t, y = A.y + (B.y - A.y) * t;
+				const float d = _sqrt((P.x - x) * (P.x - x) + (P.z - z) * (P.z - z));
+				if (d < best_d && _abs(P.y - y) < up)
+				{
+					best_d = d;
+					best = &L;
+					best_along = walked + A.distance_to(B) * t;
+				}
+				walked += A.distance_to(B);
+			}
+		}
+		// beyond either end of the line the node is not the way's
+		if (!best || best_along < 1.f || best_along > best->length - 1.f) continue;
+		along_lines++;
+		const u32 owner = best_along * 2.f < best->length ? best->a : best->b;
+		if (owner >= count || cross.vertex(node).game_vertex_id() == owner) continue;
+		cross.kt_cell(node, GameGraph::_GRAPH_ID(owner), P.distance_to(m_nodes[owner].tLocalPoint));
+		changed++;
+	}
+	Msg("* [kt world] the world graph: %u nodes along the lines of the added vertices' edges, %u of them now point to the nearer end of their edge",
+	    along_lines, changed);
 }
 
 void CGameGraph::kt_cross_cells(const CLevelGraph& level_graph, xr_vector<CGameLevelCrossTable::CCell>& cells) const

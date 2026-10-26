@@ -41,6 +41,7 @@ IC CGameGraph::CGameGraph(const IReader& _stream)
 	m_kt_nodes = 0;
 #ifdef XRGAME_EXPORTS
 	m_kt_placed = false;
+	m_kt_file_count = header().vertex_count();
 #endif
 }
 

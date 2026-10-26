@@ -199,6 +199,11 @@ static void kt_chunk_setup()
 		KtChunk::GraphAt A;
 		if (4 == sscanf(k + 13, "%u,%f,%f,%f", &A.vertex, &A.point.x, &A.point.y, &A.point.z)) g_kt_chunk.graph_ats.push_back(A);
 	}
+	for (LPCSTR k = strstr(params, "-kt_graph_vertex "); k; k = strstr(k + 1, "-kt_graph_vertex "))
+	{
+		KtChunk::GraphVertex V;
+		if (5 == sscanf(k + 17, "%u,%u,%f,%f,%f", &V.vertex, &V.like, &V.point.x, &V.point.y, &V.point.z)) g_kt_chunk.graph_vertices.push_back(V);
+	}
 	if (LPCSTR k = strstr(params, "-kt_graph_seams "))
 	{
 		string256 list = "";

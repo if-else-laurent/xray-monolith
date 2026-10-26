@@ -99,7 +99,13 @@ public:
 	bool kt_in_world(u32 level_id) const { return level_id < m_kt_world.size() && m_kt_world[level_id]; }
 	// cross table cells for the nodes added to the base level's AI map
 	void kt_cross_cells(const class CLevelGraph& level_graph, xr_vector<CGameLevelCrossTable::CCell>& cells) const;
+	// the vertices added by -kt_graph_vertex get the nodes along the lines of their edges, each node the
+	// nearer end of its edge along the line (after kt_place and the cross table's kt_extend)
+	void kt_way_cells(const class CLevelGraph& level_graph, CGameLevelCrossTable& cross) const;
+	// the vertices of the file; those from here on are added by -kt_graph_vertex
+	u32 kt_file_vertex_count() const { return m_kt_file_count; }
 private:
+	u32 m_kt_file_count;
 	xr_vector<s8> m_kt_chunk;
 	xr_vector<GameGraph::_LEVEL_ID> m_kt_level; // the vertices' levels as the file has them
 	xr_vector<u8> m_kt_world; // by level id

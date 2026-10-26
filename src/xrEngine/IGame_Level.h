@@ -128,6 +128,13 @@ struct ENGINE_API KtChunk
 	// passage was there is scenery now, and a squad that came to the vertex online stood there.
 	struct GraphAt { u32 vertex; Fvector point; };
 	xr_vector<GraphAt> graph_ats;
+	// -kt_graph_vertex <vertex>,<like>,<x>,<y>,<z>, any number: a vertex added to the world graph, at this
+	// point of the world, on the base level, its kinds of place those of <like>. Its number must be the
+	// next after the file's vertices and those added before it (the keys say it, so that the edges and
+	// lines of other keys can name it). A seam's way of hundreds of metres gets stops along it: offline
+	// a squad changed its place only at the ends, online it had one vertex all the way (#244).
+	struct GraphVertex { u32 vertex, like; Fvector point; };
+	xr_vector<GraphVertex> graph_vertices;
 	// -kt_graph_edge <vertex>,<vertex>,<metres>, any number: an edge of the world graph added both ways
 	// (or its length set, when it is there). A vertex put elsewhere by -kt_graph_at keeps its old
 	// neighbours: the end of the south entrance's edge moved to the collector's opening was still

@@ -63,6 +63,9 @@ public:
 	public:
 		IC GameGraph::_GRAPH_ID game_vertex_id() const;
 		IC float distance() const;
+#ifndef AI_COMPILER
+		void kt_set(GameGraph::_GRAPH_ID vertex, float distance) { tGraphIndex = vertex; fDistance = distance; }
+#endif
 #ifdef AI_COMPILER
 		friend class CLevelGameGraph;
 		friend class CCrossTableBuilder;
@@ -97,6 +100,11 @@ public:
 	// Seamless world experiment (kt): the AI map got the nodes of one more level appended; they
 	// are told to belong to the same game vertex as the node `like_vertex` of this level.
 	IC void kt_extend(u32 new_count, const CCell* added);
+	// a node's cell set anew: only once the table is our own copy (kt_extend)
+	void kt_cell(u32 level_vertex_id, GameGraph::_GRAPH_ID vertex, float distance)
+	{
+		if (m_kt_own && level_vertex_id < m_tCrossTableHeader.level_vertex_count()) m_kt_own[level_vertex_id].kt_set(vertex, distance);
+	}
 private:
 	CCell* m_kt_own;
 #endif
