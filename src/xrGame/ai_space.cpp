@@ -494,8 +494,11 @@ void CGameGraph::kt_way_cells(const CLevelGraph& level_graph, CGameLevelCrossTab
 	// The lines of the edges an added vertex has (-kt_graph_line, cut at the added vertices). A node
 	// within a few metres of one takes the end of that edge nearer along the line: online a squad
 	// walking a seam's way of hundreds of metres had one vertex all the way, the nodes of the corridor
-	// pointing to its far end or to the levels' vertices around (#244).
-	const float across = 15.f, up = 6.f;
+	// pointing to its far end or to the levels' vertices around (#244). Within `inner` of the line any
+	// node of its location; further out, to `across`, only a node pointing to a vertex of the same
+	// way (its ends and stops): in the Meadow's field and by the bed a live squad walks 20-30 m off
+	// the line on nodes still pointing to 5338, while a node of another way there keeps its own (#263).
+	const float inner = 15.f, across = 35.f, up = 6.f;
 	xr_vector<const KtChunk::GraphLine*> lines;
 	Fbox box;
 	box.invalidate();
@@ -513,8 +516,29 @@ void CGameGraph::kt_way_cells(const CLevelGraph& level_graph, CGameLevelCrossTab
 		}
 	}
 	if (lines.empty()) return;
+	// the ways: lines joined at their added vertices (638 - 5349 - ... - 5338 is one, 5338 - ... - 1407
+	// another); a vertex of a way is any end of its lines
+	xr_vector<u32> way(lines.size());
+	for (u32 l = 0; l < lines.size(); l++) way[l] = l;
+	for (bool joined = true; joined;)
+	{
+		joined = false;
+		for (u32 l = 0; l < lines.size(); l++)
+			for (u32 k = 0; k < lines.size(); k++)
+			{
+				if (way[l] == way[k]) continue;
+				const u32 shared[] = {lines[l]->a == lines[k]->a || lines[l]->a == lines[k]->b ? lines[l]->a : u32(-1),
+				                      lines[l]->b == lines[k]->a || lines[l]->b == lines[k]->b ? lines[l]->b : u32(-1)};
+				for (int s = 0; s < 2; s++)
+					if (shared[s] >= m_kt_file_count && shared[s] < count)
+					{
+						way[l] = way[k] = std::min(way[l], way[k]);
+						joined = true;
+					}
+			}
+	}
 	box.grow(across);
-	u32 changed = 0, along_lines = 0;
+	u32 changed = 0, along_lines = 0, wide = 0;
 	for (u32 node = 0, nodes = level_graph.header().vertex_count(); node < nodes; node++)
 	{
 		const Fvector P = level_graph.vertex_position(node);
@@ -549,11 +573,20 @@ void CGameGraph::kt_way_cells(const CLevelGraph& level_graph, CGameLevelCrossTab
 		const u32 owner = best_along * 2.f < best->length ? best->a : best->b;
 		const u32 was = cross.vertex(node).game_vertex_id();
 		if (owner >= count || was == owner || !valid_vertex_id(was) || kt_level(was) != kt_level(owner)) continue;
+		if (best_d >= inner)
+		{
+			const u32 own_way = way[std::find(lines.begin(), lines.end(), best) - lines.begin()];
+			bool of_way = false;
+			for (u32 l = 0; l < lines.size() && !of_way; l++)
+				of_way = way[l] == own_way && (lines[l]->a == was || lines[l]->b == was);
+			if (!of_way) continue;
+			wide++;
+		}
 		cross.kt_cell(node, GameGraph::_GRAPH_ID(owner), P.distance_to(m_nodes[owner].tLocalPoint));
 		changed++;
 	}
-	Msg("* [kt world] the world graph: %u nodes along the lines of the added vertices' edges, %u of them now point to the nearer end of their edge",
-	    along_lines, changed);
+	Msg("* [kt world] the world graph: %u nodes along the lines of the added vertices' edges, %u of them now point to the nearer end of their edge (%u of those %.0f-%.0f m off the line)",
+	    along_lines, changed, wide, inner, across);
 	for (u32 i = m_kt_file_count; i < count; i++)
 		Msg("* [kt world] the world graph: added vertex %u is in %s", i, *header().level(kt_level(i)).name());
 }
