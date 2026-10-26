@@ -123,7 +123,7 @@ void CAI_Space::load(LPCSTR level_name)
 		game_graph().kt_cross_cells(level_graph(), cells);
 		const_cast<CGameLevelCrossTable&>(cross_table()).kt_extend(level_graph().header().vertex_count(), &cells[0]);
 		const_cast<CGameGraph&>(game_graph()).kt_place(level_graph());
-		game_graph().kt_way_cells(level_graph(), const_cast<CGameLevelCrossTable&>(cross_table()));
+		const_cast<CGameGraph&>(game_graph()).kt_way_cells(level_graph(), const_cast<CGameLevelCrossTable&>(cross_table()));
 		if (m_patrol_path_storage)
 			m_patrol_path_storage->kt_place(game_graph(), level_graph());
 	}
@@ -478,10 +478,19 @@ void CGameGraph::kt_place(const CLevelGraph& level_graph)
 	    moved, lost, points, points_lost);
 }
 
-void CGameGraph::kt_way_cells(const CLevelGraph& level_graph, CGameLevelCrossTable& cross) const
+void CGameGraph::kt_way_cells(const CLevelGraph& level_graph, CGameLevelCrossTable& cross)
 {
 	const u32 count = header().vertex_count();
 	if (m_kt_file_count >= count) return;
+	// an added vertex is in the location its node's cell is in: the name of the place the actor is
+	// in comes from the cells, and the cells of a location stay its own below
+	for (u32 i = m_kt_file_count; i < count; i++)
+	{
+		const u32 node = m_nodes[i].tNodeID;
+		if (!level_graph.valid_vertex_id(node)) continue;
+		const u32 was = cross.vertex(node).game_vertex_id();
+		if (was < m_kt_file_count) m_kt_level[i] = kt_level(was);
+	}
 	// The lines of the edges an added vertex has (-kt_graph_line, cut at the added vertices). A node
 	// within a few metres of one takes the end of that edge nearer along the line: online a squad
 	// walking a seam's way of hundreds of metres had one vertex all the way, the nodes of the corridor
@@ -538,12 +547,15 @@ void CGameGraph::kt_way_cells(const CLevelGraph& level_graph, CGameLevelCrossTab
 		if (!best || best_along < 1.f || best_along > best->length - 1.f) continue;
 		along_lines++;
 		const u32 owner = best_along * 2.f < best->length ? best->a : best->b;
-		if (owner >= count || cross.vertex(node).game_vertex_id() == owner) continue;
+		const u32 was = cross.vertex(node).game_vertex_id();
+		if (owner >= count || was == owner || !valid_vertex_id(was) || kt_level(was) != kt_level(owner)) continue;
 		cross.kt_cell(node, GameGraph::_GRAPH_ID(owner), P.distance_to(m_nodes[owner].tLocalPoint));
 		changed++;
 	}
 	Msg("* [kt world] the world graph: %u nodes along the lines of the added vertices' edges, %u of them now point to the nearer end of their edge",
 	    along_lines, changed);
+	for (u32 i = m_kt_file_count; i < count; i++)
+		Msg("* [kt world] the world graph: added vertex %u is in %s", i, *header().level(kt_level(i)).name());
 }
 
 void CGameGraph::kt_cross_cells(const CLevelGraph& level_graph, xr_vector<CGameLevelCrossTable::CCell>& cells) const
