@@ -574,9 +574,16 @@ void CGameGraph::kt_way_cells(const CLevelGraph& level_graph, CGameLevelCrossTab
 		const bool before = best_along < 1.f, after = best_along > best->length - 1.f;
 		if ((before && best->a < m_kt_file_count) || (after && best->b < m_kt_file_count)) continue;
 		along_lines++;
-		const u32 owner = before ? best->a : after ? best->b : best_along * 2.f < best->length ? best->a : best->b;
+		u32 owner = before ? best->a : after ? best->b : best_along * 2.f < best->length ? best->a : best->b;
 		const u32 was = cross.vertex(node).game_vertex_id();
-		if (owner >= count || was == owner || !valid_vertex_id(was) || kt_level(was) != kt_level(owner)) continue;
+		if (!valid_vertex_id(was)) continue;
+		// where the locations meet inside an edge (5353 the Meadow's, 5354 Darkscape's: Darkscape's cells
+		// begin 20 m short of the middle) a node of the far end's location takes the far end if it is a stop
+		const u32 other = owner == best->a ? best->b : best->a;
+		if (!before && !after && kt_level(was) != kt_level(owner) && other >= m_kt_file_count && other < count &&
+		    kt_level(was) == kt_level(other))
+			owner = other;
+		if (owner >= count || was == owner || kt_level(was) != kt_level(owner)) continue;
 		if (best_d >= inner)
 		{
 			const u32 own_way = way[std::find(lines.begin(), lines.end(), best) - lines.begin()];
