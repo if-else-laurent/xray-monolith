@@ -567,10 +567,14 @@ void CGameGraph::kt_way_cells(const CLevelGraph& level_graph, CGameLevelCrossTab
 				walked += A.distance_to(B);
 			}
 		}
-		// beyond either end of the line the node is not the way's
-		if (!best || best_along < 1.f || best_along > best->length - 1.f) continue;
+		// beyond an end of the way the node is not the way's; beyond a stop it is the stop's: across the
+		// way at each stop a strip of nodes lies beyond the ends of both its lines, and it kept 5338's
+		// cells - alive the squad read 5338 at every stop it passed (#263)
+		if (!best) continue;
+		const bool before = best_along < 1.f, after = best_along > best->length - 1.f;
+		if ((before && best->a < m_kt_file_count) || (after && best->b < m_kt_file_count)) continue;
 		along_lines++;
-		const u32 owner = best_along * 2.f < best->length ? best->a : best->b;
+		const u32 owner = before ? best->a : after ? best->b : best_along * 2.f < best->length ? best->a : best->b;
 		const u32 was = cross.vertex(node).game_vertex_id();
 		if (owner >= count || was == owner || !valid_vertex_id(was) || kt_level(was) != kt_level(owner)) continue;
 		if (best_d >= inner)
