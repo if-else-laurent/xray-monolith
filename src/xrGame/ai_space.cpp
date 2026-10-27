@@ -496,9 +496,9 @@ void CGameGraph::kt_way_cells(const CLevelGraph& level_graph, CGameLevelCrossTab
 	// walking a seam's way of hundreds of metres had one vertex all the way, the nodes of the corridor
 	// pointing to its far end or to the levels' vertices around (#244). Within `inner` of the line any
 	// node of its location; further out, to `across`, only a node pointing to a vertex of the same
-	// way (its ends and stops): in the Meadow's field and by the bed a live squad walks 20-30 m off
+	// way (its ends and stops): in the Meadow's field and by the bed a live squad walks 20-50 m off
 	// the line on nodes still pointing to 5338, while a node of another way there keeps its own (#263).
-	const float inner = 15.f, across = 35.f, up = 6.f;
+	const float inner = 15.f, across = 60.f, up = 6.f;
 	xr_vector<const KtChunk::GraphLine*> lines;
 	Fbox box;
 	box.invalidate();
