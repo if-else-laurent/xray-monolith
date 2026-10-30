@@ -467,6 +467,11 @@ void CSE_ALifeOnlineOfflineGroup::add_location_type(LPCSTR mask)
 void CSE_ALifeOnlineOfflineGroup::force_change_position(Fvector position)
 {
 	u32 new_level_vertex = ai().level_graph().vertex_id(position);
+	if (!ai().level_graph().valid_vertex_id(new_level_vertex))
+	{
+		Msg("! [kt] force_change_position: [%s] to a point without an AI node [%f;%f;%f], stays", name_replace(), position.x, position.y, position.z);
+		return;
+	}
 	GameGraph::_GRAPH_ID new_graph_vertex = ai().cross_table().vertex(new_level_vertex).game_vertex_id();
 	o_Position = position;
 	m_tNodeID = new_level_vertex;

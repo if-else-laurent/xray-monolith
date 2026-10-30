@@ -196,6 +196,11 @@ void CAI_Trader::OnEvent(NET_Packet& P, u16 type)
 		{
 			P.r_u16(id);
 			Obj = Level().Objects.net_Find(id);
+			if (!Obj)
+			{
+				Msg("! [kt] trader [%s]: event %d for an item [%d] that is not online", cName().c_str(), type, id);
+				break;
+			}
 			bool just_before_destroy = !P.r_eof() && P.r_u8();
 			bool dont_create_shell = (type == GE_TRADE_SELL) || just_before_destroy;
 
