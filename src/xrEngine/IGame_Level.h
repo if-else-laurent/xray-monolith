@@ -87,6 +87,7 @@ struct ENGINE_API KtChunk
 	string64 base; // -kt_chunk_base <level>: the only level the chunk is added to; empty - any
 	KtThreadFlag loading; // the renderer is reading the chunk's files right now, on this thread
 	u32 online_per_frame; // -kt_online_per_frame <n>: objects A-Life lets online in one frame at most (0 - any number)
+	float online_at_load; // -kt_online_load <m>: what is within so many metres of the player comes online on the loading screen, past the budgets (250); 0 - by the budgets
 	float ahead_budget; // -kt_ahead_budget <ms>, console kt_ahead_budget: a neighbour's visuals read ahead so long a frame (4); 0 - one visual a frame (a check of the steps)
 	float spawn_budget; // -kt_spawn_budget <ms>: objects coming online after their models, at most so long a frame (0 - all at once)
 	// The loader icon in the corner (drawn by the game's HUD): the last moment something of the world
@@ -366,7 +367,7 @@ struct ENGINE_API KtChunk
 		return strict && (foreign(piece, a.x, a.z) || foreign(piece, b.x, b.z) || foreign(piece, c.x, c.z));
 	}
 
-	KtChunk() : configured(false), active(false), online_per_frame(12), ahead_budget(4.f), spawn_budget(8.f), busy_time(-1.f), icon(true), held(false), current(0), fake_material(u32(-1)), static_radius(0), stream_in(0), stream_out(0), reach_in(0), reach_out(0), location_depth(60.f), location_wait(20.f), sight_in(0), sight_out(0), sight_x0(0), sight_z0(0), sight_cell(1), sight_nx(0), sight_nz(0), sight_pieces(0), base_loaded(true), base_wanted(true), base_manual(false), base_has_walk(false), mask_x0(0), mask_z0(0), mask_cell(1), mask_nx(0), mask_nz(0), mask_pieces(0)
+	KtChunk() : configured(false), active(false), online_per_frame(12), online_at_load(250.f), ahead_budget(4.f), spawn_budget(8.f), busy_time(-1.f), icon(true), held(false), current(0), fake_material(u32(-1)), static_radius(0), stream_in(0), stream_out(0), reach_in(0), reach_out(0), location_depth(60.f), location_wait(20.f), sight_in(0), sight_out(0), sight_x0(0), sight_z0(0), sight_cell(1), sight_nx(0), sight_nz(0), sight_pieces(0), base_loaded(true), base_wanted(true), base_manual(false), base_has_walk(false), mask_x0(0), mask_z0(0), mask_cell(1), mask_nx(0), mask_nz(0), mask_pieces(0)
 	{
 		name[0] = 0;
 		base[0] = 0;

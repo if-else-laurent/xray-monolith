@@ -668,7 +668,7 @@ void CLevel::ProcessSpawnEvents()
 	// (-kt_spawn_budget <ms>, 8 by default; 0 - all at once, as before). The rest wait in the queue.
 	CTimer kt_budget_timer;
 	kt_budget_timer.Start();
-	const float kt_budget = g_kt_chunk.active ? g_kt_chunk.spawn_budget : 0.f;
+	const float kt_budget = g_kt_chunk.active && !(Device.dwPrecacheFrame && g_kt_chunk.online_at_load > 0.f) ? g_kt_chunk.spawn_budget : 0.f;
 	for (u32 kt_at = 0; kt_at < events_to_process.size(); kt_at++)
 	{
 		if (kt_budget > 0.f && kt_at > 0 && kt_budget_timer.GetElapsed_sec() * 1000.f > kt_budget)
@@ -1030,6 +1030,44 @@ void CLevel::MakeReconnect()
 // guide, the map, a script, or come faster than the neighbour - stands held where he is, with the
 // screen darkened and the loader icon, until the land comes; he fell through the void before. Whose
 // land a place is, the mask tells (0 the level, 1.. the attached ones; nobody's land is ours, always there).
+// kt (#314): the loading screen stays until what is near the player is on the client. The 60 frames of the
+// precache stop counting at 8 (5 starts the end of the screen); 30 s at most, whatever is left goes by the budget.
+bool kt_load_pending(); // alife_dynamic_object.cpp
+void CLevel::kt_hold_load_screen()
+{
+	static u32 kt_began = 0, kt_held = 0;
+	if (!g_kt_chunk.active || g_kt_chunk.online_at_load <= 0.f || !ai().get_alife())
+		return;
+	if (!Device.dwPrecacheFrame)
+	{
+		if (kt_began)
+			Msg("* [kt load] the screen took %u ms, %u frames of them waiting for what is within %.0f m", Device.dwTimeContinual - kt_began, kt_held, g_kt_chunk.online_at_load);
+		kt_began = kt_held = 0;
+		return;
+	}
+	if (!kt_began)
+		kt_began = Device.dwTimeContinual;
+	if (Device.dwPrecacheFrame > 8)
+		return;
+	bool empty;
+	{
+		xrSRWLockGuard g(prefetch_lock);
+		empty = spawn_events->queue.empty() && prefetch_events->empty();
+	}
+	if (empty && !kt_load_pending())
+		return;
+	if (Device.dwTimeContinual - kt_began > 30000)
+	{
+		static u32 kt_late = 0;
+		if (kt_late != kt_began)
+			Msg("! [kt load] the screen does not wait any longer: 30 s, spawns %s", empty ? "done" : "still queued");
+		kt_late = kt_began;
+		return;
+	}
+	kt_held++;
+	Device.dwPrecacheFrame = 8;
+}
+
 static void kt_hold_actor()
 {
 	static bool held = false;
@@ -1129,6 +1167,7 @@ void CLevel::OnFrame()
 #endif
 
 	kt_hold_actor();
+	kt_hold_load_screen();
 
 	if (m_bNeed_CrPr)
 		make_NetCorrectionPrediction();

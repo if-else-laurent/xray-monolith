@@ -89,6 +89,8 @@ float CALifeUpdateManager::shedule_Scale()
 	return (.5f); // (schedule_min + schedule_max)*0.5f
 }
 
+void kt_load_updated(); // kt (#314), alife_dynamic_object.cpp
+
 void CALifeUpdateManager::update_switch()
 {
 	init_ef_storage();
@@ -97,6 +99,7 @@ void CALifeUpdateManager::update_switch()
 		;
 		graph().level().update(CSwitchPredicate(this), Device.dwPrecacheFrame > 0);
 	STOP_PROFILE
+	kt_load_updated();
 }
 
 void CALifeUpdateManager::update_scheduled(bool init_ef)

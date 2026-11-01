@@ -187,8 +187,27 @@ void kt_online_counted()
 	}
 	kt_online_count++;
 }
+// kt (#314): on the loading screen what is within -kt_online_load of the player comes online at once, the rest
+// waits for the game and its budget. Without this the living near the player came after ~1000 other objects, 20-30 s
+// into the game. It also keeps a squad from the rule of the scripts that bans coming online within excl_dist
+// of the player (sim_squad_scripted:check_online_status, #319): a squad that missed the first update, which is
+// before the first check of the scripts, stayed offline in front of the player until he walked away.
+static u32 kt_load_near_frame = 0, kt_load_update_frame = 0;
+void kt_load_updated() { if (Device.dwPrecacheFrame) kt_load_update_frame = Device.dwFrame; }
+bool kt_load_pending()
+{
+	// a clean update after the last near object, and that object's way to the client
+	return (!kt_load_update_frame || kt_load_update_frame <= kt_load_near_frame || Device.dwFrame <= kt_load_near_frame + 3);
+}
 bool kt_online_full(const CSE_ALifeDynamicObject* object)
 {
+	if (g_kt_chunk.active && object->ID != 0 && Device.dwPrecacheFrame && g_kt_chunk.online_at_load > 0.f)
+	{
+		if (object->alife().graph().actor()->o_Position.distance_to(object->o_Position) > g_kt_chunk.online_at_load)
+			return (true);
+		kt_load_near_frame = Device.dwFrame;
+		return (false);
+	}
 	if (!g_kt_chunk.active || !g_kt_chunk.online_per_frame || object->ID == 0 || kt_online_frame != Device.dwFrame)
 		return (false);
 	if (kt_online_count < g_kt_chunk.online_per_frame)

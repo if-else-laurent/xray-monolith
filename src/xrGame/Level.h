@@ -281,6 +281,7 @@ public:
 	NET_Queue_Event* spawn_events = nullptr;
     spawn_events_data_map* spawn_events_data = nullptr;
 	prefetch_event_queue* prefetch_events = nullptr;
+	void kt_hold_load_screen(); // kt (#314)
 	models_set* prefetched_models = nullptr;
 	xrSRWLock prefetch_lock;
     bool PostponedSpawn(u16 id);
