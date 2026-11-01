@@ -178,8 +178,13 @@ bool kt_land_absent(const CSE_ALifeDynamicObject* object)
 // of the client spawning them in one frame. With the world at most -kt_online_per_frame (12; 32 cost 60-100 ms) go in a
 // frame; the rest stay offline till the next update, which comes the next frame.
 static u32 kt_online_frame = u32(-1), kt_online_count = 0;
+static u32 kt_load_near_frame = 0, kt_load_update_frame = 0;
 void kt_online_counted()
 {
+	// only what really went: an object that passes the budget and fails further on (762 frames of the screen on a
+	// save of the own build) must not hold the screen
+	if (Device.dwPrecacheFrame)
+		kt_load_near_frame = Device.dwFrame;
 	if (kt_online_frame != Device.dwFrame)
 	{
 		kt_online_frame = Device.dwFrame;
@@ -192,7 +197,6 @@ void kt_online_counted()
 // into the game. It also keeps a squad from the rule of the scripts that bans coming online within excl_dist
 // of the player (sim_squad_scripted:check_online_status, #319): a squad that missed the first update, which is
 // before the first check of the scripts, stayed offline in front of the player until he walked away.
-static u32 kt_load_near_frame = 0, kt_load_update_frame = 0;
 void kt_load_updated() { if (Device.dwPrecacheFrame) kt_load_update_frame = Device.dwFrame; }
 bool kt_load_pending()
 {
@@ -205,7 +209,6 @@ bool kt_online_full(const CSE_ALifeDynamicObject* object)
 	{
 		if (object->alife().graph().actor()->o_Position.distance_to(object->o_Position) > g_kt_chunk.online_at_load)
 			return (true);
-		kt_load_near_frame = Device.dwFrame;
 		return (false);
 	}
 	if (!g_kt_chunk.active || !g_kt_chunk.online_per_frame || object->ID == 0 || kt_online_frame != Device.dwFrame)
