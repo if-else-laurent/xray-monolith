@@ -1911,6 +1911,11 @@ void CCar::OnEvent(NET_Packet& P, u16 type)
 		{
 			P.r_u16(id);
 			CObject* O = Level().Objects.net_Find(id);
+			if (!O)
+			{
+				Msg("! [kt] car [%s]: event %d for an item [%d] that is not online", cName().c_str(), type, id);
+				break;
+			}
 			if (GetInventory()->CanTakeItem(smart_cast<CInventoryItem*>(O)))
 			{
 				O->H_SetParent(this);
@@ -1930,6 +1935,11 @@ void CCar::OnEvent(NET_Packet& P, u16 type)
 		{
 			P.r_u16(id);
 			CObject* O = Level().Objects.net_Find(id);
+			if (!O)
+			{
+				Msg("! [kt] car [%s]: event %d for an item [%d] that is not online", cName().c_str(), type, id);
+				break;
+			}
 
 			bool just_before_destroy = !P.r_eof() && P.r_u8();
 			O->SetTmpPreDestroy(just_before_destroy);

@@ -37,7 +37,11 @@ void CAI_Stalker::OnEvent(NET_Packet& P, u16 type)
 			P.r_u16(id);
 			CObject* O = Level().Objects.net_Find(id);
 
-			R_ASSERT(O);
+			if (!O)
+			{
+				Msg("! [kt] stalker [%s]: event %d for an item [%d] that is not online", cName().c_str(), type, id);
+				break;
+			}
 
 #ifndef SILENCE
 			Msg("Trying to take - %s (%d)", *O->cName(),O->ID());

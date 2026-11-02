@@ -600,6 +600,11 @@ void CMissile::OnEvent(NET_Packet& P, u16 type)
 		{
 			P.r_u16(id);
 			CMissile* missile = smart_cast<CMissile*>(Level().Objects.net_Find(id));
+			if (!missile)
+			{
+				Msg("! [kt] missile [%s]: event %d for an item [%d] that is not online", cName().c_str(), type, id);
+				break;
+			}
 			m_fake_missile = missile;
 			missile->H_SetParent(this);
 			missile->Position().set(Position());

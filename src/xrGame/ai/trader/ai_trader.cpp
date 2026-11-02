@@ -178,6 +178,11 @@ void CAI_Trader::OnEvent(NET_Packet& P, u16 type)
 	case GE_OWNERSHIP_TAKE:
 		P.r_u16(id);
 		Obj = Level().Objects.net_Find(id);
+		if (!Obj)
+		{
+			Msg("! [kt] trader [%s]: event %d for an item [%d] that is not online", cName().c_str(), type, id);
+			break;
+		}
 		if (inventory().CanTakeItem(smart_cast<CInventoryItem*>(Obj)))
 		{
 			Obj->H_SetParent(this);
