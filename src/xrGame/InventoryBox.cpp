@@ -69,8 +69,15 @@ void CInventoryBox::OnEvent(NET_Packet& P, u16 type)
 			}
 			xr_vector<u16>::iterator it;
 			it = std::find(m_items.begin(), m_items.end(), id);
-			VERIFY(it!=m_items.end());
-			if (it != m_items.end())
+			// kt: the release build has no VERIFY, and erase(end()) moved "minus one" element: memcpy read
+			// on till the heap ended (GAMMA, the reject of an item the box no longer held, #331)
+			if (it == m_items.end())
+			{
+				Msg("! [kt] box [%s] id %u: reject of item %u it does not hold (%s), skipped (#331)", cName().c_str(), ID(), id,
+					itm->cName().c_str());
+				if (itm->H_Parent() != this) break;
+			}
+			else
 				m_items.erase(it);
 
 			bool just_before_destroy = !P.r_eof() && P.r_u8();

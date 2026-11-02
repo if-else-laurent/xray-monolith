@@ -58,6 +58,22 @@ void CStreamReader::map(const u32& new_offset)
 	m_current_window_size -= difference;
 	m_current_pointer += difference;
 	m_start_pointer = m_current_pointer;
+	if (m_kt_trace) kt_trace(true);
+}
+
+void CStreamReader::kt_trace(bool on)
+{
+	m_kt_trace = on;
+	if (!on) return;
+	MEMORY_BASIC_INFORMATION mbi = {};
+	const SIZE_T got = m_current_map_view_of_file ? VirtualQuery(m_current_map_view_of_file, &mbi, sizeof(mbi)) : 0;
+	Msg("* [kt view] map %p (window %p..%p), file offset %u of %u, archive %u, thread %u; region %p, %u bytes, state 0x%x, protect 0x%x%s",
+		m_current_map_view_of_file, m_start_pointer, m_start_pointer + m_current_window_size,
+		m_start_offset + m_current_offset_from_start, m_file_size, m_archive_size, GetCurrentThreadId(),
+		mbi.BaseAddress, u32(mbi.RegionSize), mbi.State, mbi.Protect, got ? "" : ", VirtualQuery failed");
+	if (got && (u8*)mbi.BaseAddress + mbi.RegionSize < m_start_pointer + m_current_window_size)
+		Msg("! [kt view] the region ends %u bytes before the window does (#331)",
+			u32((m_start_pointer + m_current_window_size) - ((u8*)mbi.BaseAddress + mbi.RegionSize)));
 }
 
 void CStreamReader::advance(const int& offset)
@@ -121,6 +137,7 @@ CStreamReader* CStreamReader::open_chunk(const u32& chunk_id)
 	R_ASSERT2(!compressed, "cannot use CStreamReader on compressed chunks");
 	CStreamReader* result = xr_new<CStreamReader>();
 	result->construct(file_mapping_handle(), m_start_offset + tell(), size, m_archive_size, m_window_size);
+	if (m_kt_trace) result->kt_trace(true);
 	return (result);
 }
 
