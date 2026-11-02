@@ -79,6 +79,13 @@ BOOL xrCriticalSection::TryEnter()
 	return TryEnterCriticalSection((CRITICAL_SECTION*)pmutex);
 }
 
+int xrCriticalSection::OwnedDepth()
+{
+	CRITICAL_SECTION* cs = (CRITICAL_SECTION*)pmutex;
+	if (cs->OwningThread != (HANDLE)(ULONG_PTR)GetCurrentThreadId()) return 0;
+	return int(cs->RecursionCount);
+}
+
 xrCriticalSection::raii::raii(xrCriticalSection* critical_section)
 	: critical_section(critical_section)
 {

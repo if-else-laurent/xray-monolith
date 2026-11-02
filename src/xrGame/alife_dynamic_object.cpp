@@ -18,6 +18,7 @@
 #include "game_graph.h"
 #include "xrServer.h"
 #include "level.h"
+#include "script_engine.h"
 #include "map_manager.h"
 #include "ai_space.h"
 #include "../xrEngine/IGame_Level.h"
@@ -67,7 +68,16 @@ void CSE_ALifeDynamicObject::switch_online()
 
 void CSE_ALifeDynamicObject::switch_offline()
 {
-	R_ASSERT(m_bOnline);
+	// kt (Anomaly): safe_release_manager.script checks se_obj.online and then calls switch_offline; once an
+	// object already offline came here (#332, GAMMA, after a companion squad was dismissed) and the assert
+	// closed the game. Switching it offline twice would remove it twice: told of, left as it is.
+	if (!m_bOnline)
+	{
+		Msg("! [kt] switch_offline of an object already offline: [%s] id %u, parent %u, section [%s] (#332)",
+		    name_replace(), u32(ID), u32(ID_Parent), s_name.c_str());
+		ai().script_engine().print_stack();
+		return;
+	}
 	m_bOnline = false;
 	alife().remove_online(this);
 

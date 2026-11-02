@@ -51,6 +51,8 @@ public:
 	void Enter();
 	void Leave();
 	BOOL TryEnter();
+	// kt: how many times the calling thread holds it now (0 when another thread or none does)
+	int OwnedDepth();
 
 	bool IsValid() { return pmutex != nullptr; }
 };

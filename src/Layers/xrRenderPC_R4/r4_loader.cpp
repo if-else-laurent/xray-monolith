@@ -381,6 +381,15 @@ void CRender::LoadBuffers(CStreamReader* base_fs, BOOL _alternative)
 			//	TODO: DX10: Check fragmentation.
 			//	Check if buffer is less then 2048 kb
 			BYTE* pData = xr_alloc<BYTE>(iCount * 2);
+			if (staged)
+			{
+				// kt: twice the game (GAMMA) fell in a memcpy right after this line, reading the streaming thread's
+				// geomx of Darkscape; which memory the address was is told by these (#331)
+				u32 window = 0;
+				const u8* at = nullptr;
+				const u8* view = fs->kt_window(window, at);
+				Msg("* [kt chunk] IB %u: window %p..%p, at %p, into %p..%p", n, view, view + window, at, pData, pData + iCount * 2);
+			}
 			fs->r(pData, iCount * 2);
 			// kt: a triangle wholly inside a cut box is made empty (three equal indices) and is not drawn
 			for (u32 r = 0; r < kt_cut_ranges.size(); r++)

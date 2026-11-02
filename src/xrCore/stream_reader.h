@@ -47,6 +47,8 @@ public:
 	IC void seek(const int& offset);
 	IC u32 tell() const;
 	IC void close();
+	// kt: where the window mapped now lies and where reading stands in it, for the log (#331)
+	const u8* kt_window(u32& size, const u8*& at) const { size = m_current_window_size; at = m_current_pointer; return m_start_pointer; }
 
 public:
 	void advance(const int& offset);

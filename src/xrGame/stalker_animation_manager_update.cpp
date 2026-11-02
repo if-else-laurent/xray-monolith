@@ -14,6 +14,7 @@
 #include "profiler.h"
 #include "stalker_movement_manager_smart_cover.h"
 #include "Inventory.h"
+#include "../Include/xrRender/Kinematics.h"
 
 void CStalkerAnimationManager::play_delayed_callbacks()
 {
@@ -246,6 +247,12 @@ void CStalkerAnimationManager::update_impl()
 void CStalkerAnimationManager::update()
 {
 	START_PROFILE("stalker/client_update/animations")
+		// kt: the engine is built without /EH, so an exception caught below runs no destructor on its way:
+		// a guard of the model's UCalc_Mutex (LL_UpdateTracks, LL_PlayCycle; a blend callback may throw)
+		// stays locked by this thread, and the next CalculateBones of the model on a worker thread waits
+		// for it for ever - the game hangs with every thread asleep (#320)
+		IKinematics* kt_kinematics = smart_cast<IKinematics*>(m_skeleton_animated);
+		const int kt_depth = kt_kinematics ? kt_kinematics->UCalc_Mutex.OwnedDepth() : 0;
 		try
 		{
 			update_impl();
@@ -261,6 +268,15 @@ void CStalkerAnimationManager::update()
 			{
 				Msg("# Inventory item: [%s] - %s", invItem->m_section_id.c_str(), invItem->m_name.c_str());
 			}
+
+			u32 kt_released = 0;
+			while (kt_kinematics && kt_kinematics->UCalc_Mutex.OwnedDepth() > kt_depth)
+			{
+				kt_kinematics->UCalc_Mutex.Leave();
+				kt_released++;
+			}
+			if (kt_released)
+				Msg("! [kt] the model's UCalc_Mutex was left locked %u time(s) by the exception, released (#320)", kt_released);
 
 			/* avo: prevent game from crashing */
 			global().reset();
