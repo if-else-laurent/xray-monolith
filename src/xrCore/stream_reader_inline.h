@@ -27,6 +27,8 @@ IC const HANDLE& CStreamReader::file_mapping_handle() const
 
 IC void CStreamReader::unmap()
 {
+	if (m_kt_trace)
+		Msg("* [kt view] unmap %p, thread %u", m_current_map_view_of_file, GetCurrentThreadId());
 	UnmapViewOfFile(m_current_map_view_of_file);
 }
 

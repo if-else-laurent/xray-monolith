@@ -16,6 +16,7 @@ private:
 	u8* m_current_map_view_of_file;
 	u8* m_start_pointer;
 	u8* m_current_pointer;
+	bool m_kt_trace = false; // kt: log every view mapped and unmapped (#331)
 
 private:
 	void map(const u32& new_offset);
@@ -49,6 +50,9 @@ public:
 	IC void close();
 	// kt: where the window mapped now lies and where reading stands in it, for the log (#331)
 	const u8* kt_window(u32& size, const u8*& at) const { size = m_current_window_size; at = m_current_pointer; return m_start_pointer; }
+	// kt: from now on log each view this reader maps and unmaps, with the thread and the region Windows
+	// really gives (#331: memcpy reads past every window it was told of)
+	void kt_trace(bool on);
 
 public:
 	void advance(const int& offset);
