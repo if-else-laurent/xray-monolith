@@ -71,17 +71,29 @@ void CSE_ALifeDynamicObject::switch_offline()
 	// kt (Anomaly): safe_release_manager.script checks se_obj.online and then calls switch_offline; once an
 	// object already offline came here (#332, GAMMA, after a companion squad was dismissed) and the assert
 	// closed the game. Switching it offline twice would remove it twice: told of, left as it is.
+	// The Lua stack printed shows where the outermost call came from, not a call nested in C++ under another
+	// object's switch_offline (remove_online, Perform_destroy): that one, and the squad, are told as well.
+	static CSE_ALifeDynamicObject* kt_switching = nullptr;
 	if (!m_bOnline)
 	{
-		Msg("! [kt] switch_offline of an object already offline: [%s] id %u, parent %u, section [%s] (#332)",
-		    name_replace(), u32(ID), u32(ID_Parent), s_name.c_str());
+		const CSE_ALifeMonsterAbstract* monster = smart_cast<const CSE_ALifeMonsterAbstract*>(this);
+		const u16 group = monster ? monster->m_group_id : u16(0xffff);
+		const CSE_ALifeDynamicObject* squad = group != 0xffff ? ai().alife().objects().object(group, true) : nullptr;
+		Msg("! [kt] switch_offline of an object already offline: [%s] id %u, parent %u, section [%s], squad %u (%s), "
+		    "inside switch_offline of %s %u (#332)",
+		    name_replace(), u32(ID), u32(ID_Parent), s_name.c_str(), u32(group),
+		    squad ? (squad->m_bOnline ? "online" : "offline") : "none",
+		    kt_switching ? kt_switching->name_replace() : "nothing", kt_switching ? u32(kt_switching->ID) : 0u);
 		ai().script_engine().print_stack();
 		return;
 	}
+	CSE_ALifeDynamicObject* outer = kt_switching;
+	kt_switching = this;
 	m_bOnline = false;
 	alife().remove_online(this);
 
 	clear_client_data();
+	kt_switching = outer;
 }
 
 void CSE_ALifeDynamicObject::add_online(const bool& update_registries)
