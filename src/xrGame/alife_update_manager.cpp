@@ -435,12 +435,28 @@ void CALifeUpdateManager::teleport_object(ALife::_OBJECT_ID id, GameGraph::_GRAP
 	}
 #endif
 
+	CSE_ALifeMonsterAbstract* monster_abstract = smart_cast<CSE_ALifeMonsterAbstract*>(object);
+	// kt (Anomaly, #206): a member of a squad that is offline is on no vertex of the graph, on no level's list and
+	// off the schedule - its squad stands for it (register_member). TeleportSquad moves the squad and then each of
+	// its members; the graph's change put a member on the vertex and on the level's list, try_switch_online put it
+	// on the schedule, and the squad brought online later had a member there (the line "was on the schedule of
+	// A-Life while offline"; v0.0.5's soak: released so, "pure virtual function call"). Its place is only set;
+	// one found on its vertex all the same is moved by the graph as before, not left there under another vertex.
+	if (!object->m_bOnline && monster_abstract && monster_abstract->m_group_id != 0xffff &&
+		(!ai().game_graph().valid_vertex_id(object->m_tGraphID) ||
+			!graph().objects()[object->m_tGraphID].objects().objects().count(object->ID)))
+	{
+		object->m_tGraphID = game_vertex_id;
+		object->m_tNodeID = level_vertex_id;
+		object->o_Position = position;
+		monster_abstract->m_tNextGraphID = game_vertex_id;
+		return;
+	}
 	if (object->m_bOnline)
 		switch_offline(object);
 	graph().change(object, object->m_tGraphID, game_vertex_id);
 	object->m_tNodeID = level_vertex_id;
 	object->o_Position = position;
-	CSE_ALifeMonsterAbstract* monster_abstract = smart_cast<CSE_ALifeMonsterAbstract*>(object);
 	if (monster_abstract)
 		monster_abstract->m_tNextGraphID = object->m_tGraphID;
 }
