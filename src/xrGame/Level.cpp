@@ -1054,9 +1054,14 @@ void CLevel::kt_hold_load_screen()
 		xrSRWLockGuard g(prefetch_lock);
 		empty = spawn_events->queue.empty() && prefetch_events->empty();
 	}
-	if (empty && !kt_load_pending())
+	// #359/#360: a save loaded over the level already there (Game:QuickLoad - in the world every save is
+	// of the one level) keeps the stream's set of the last game: the land under the player may still be on
+	// its way, and the actor himself comes a few frames after the objects were removed. The screen stays
+	// over both: the land was built 8 s after it, and the "loading screen key prompt" ran with db.actor nil.
+	const bool land = g_kt_chunk.held || !g_actor;
+	if (empty && !kt_load_pending() && !land)
 		return;
-	if (Device.dwTimeContinual - kt_began > 30000)
+	if (Device.dwTimeContinual - kt_began > (land ? 60000u : 30000u))
 	{
 		static u32 kt_late = 0;
 		if (kt_late != kt_began)
