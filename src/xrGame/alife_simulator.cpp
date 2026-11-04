@@ -32,6 +32,11 @@ void restart_all()
 		return;
 
 	destroy_lua_wpn_params();
+	// kt (#360): a save loaded from the menu over the level already there (Game:QuickLoad: in the seamless
+	// world every save is of the one level) comes here with the menu maybe still up; it goes down first,
+	// as for the full load, before its windows are freed with the Lua state
+	if (MainMenu()->IsActive())
+		MainMenu()->Activate(false);
 	MainMenu()->DestroyInternal(true);
 	xr_delete(g_object_factory);
 	ai().script_engine().init();

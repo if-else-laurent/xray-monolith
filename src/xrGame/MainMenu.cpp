@@ -253,7 +253,7 @@ void CMainMenu::Activate(bool bActivate)
 			Console->Show();
 		}
 
-		if (m_startDialog->IsShown())
+		if (m_startDialog && m_startDialog->IsShown()) // kt (#360): DestroyInternal(true) may have freed it
 			m_startDialog->HideDialog();
 
 		CleanInternals();
@@ -604,7 +604,15 @@ void CMainMenu::SwitchToMultiplayerMenu()
 void CMainMenu::DestroyInternal(bool bForce)
 {
 	if (m_startDialog && ((m_deactivated_frame < Device.dwFrame + 4) || bForce))
+	{
+		// kt (#360): forced by restart_all (a save loaded over the level: Game:QuickLoad) the menu may still be
+		// up; its windows - this one and the Lua ones over it, freed with the Lua state next - are not to
+		// stay in the lists to be drawn: the next frame drew a freed window (0xC0000005 at a garbage address)
+		if (m_startDialog->IsShown())
+			m_startDialog->HideDialog();
+		CleanInternals();
 		xr_delete(m_startDialog);
+	}
 }
 
 void CMainMenu::OnNewPatchFound(LPCSTR VersionName, LPCSTR URL)

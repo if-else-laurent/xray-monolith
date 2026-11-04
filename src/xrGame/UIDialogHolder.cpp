@@ -299,7 +299,20 @@ void CDialogHolder::CleanInternals()
 	while (!m_input_receivers.empty())
 		m_input_receivers.pop_back();
 
-	m_dialogsToRender.clear();
+	// kt (#360): called from inside a window's Update or Draw (a Lua window that loads a save deactivates
+	// the main menu), clearing the list under OnFrame's or DoRenderDialogs' loop left it walking freed
+	// memory; the windows are let go as RemoveDialogToRender does it then, OnFrame erases them after the loop
+	if (m_b_in_update || m_b_in_render)
+	{
+		for (dlgItem& itm : m_dialogsToRender)
+		{
+			itm.wnd = nullptr;
+			itm.enabled = false;
+		}
+	}
+	else
+		m_dialogsToRender.clear();
+	m_dialogsToRender_new.clear();
 	GetUICursor().Hide();
 }
 
