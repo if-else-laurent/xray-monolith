@@ -5,6 +5,41 @@
 #include "xrServer.h"
 #include "xrmessages.h"
 #include "ai_space.h"
+#include "script_engine.h"
+
+// kt (Anomaly, #352): the list of an object's children may name an item that is not its own on the server - one
+// whose parent is another object or none, one not found, one named twice (GAMMA, a companion squad carried by
+// teleport_object over a seam: the member's switch_offline met it in Perform_destroy and the assert in
+// Perform_reject closed the game). Rejecting it would take it from an owner it does not have, and remove_online
+// would make it the member's again offline: it is left out of the list and told of, where the owner is.
+void xrServer::kt_drop_stray_children(CSE_Abstract* object, LPCSTR where)
+{
+	xr_vector<u16>& C = object->children;
+	bool told = false;
+	for (u32 i = 0; i < C.size();)
+	{
+		const u16 id = C[i];
+		CSE_Abstract* child = game->get_entity_from_eid(id);
+		const bool twice = std::find(C.begin(), C.begin() + i, id) != C.begin() + i;
+		if (child && child->ID_Parent == object->ID && !twice)
+		{
+			++i;
+			continue;
+		}
+		CSE_Abstract* owner = child && child->ID_Parent != 0xffff ? game->get_entity_from_eid(child->ID_Parent) : nullptr;
+		const bool listed = owner && std::find(owner->children.begin(), owner->children.end(), id) != owner->children.end();
+		Msg("! [kt] a stray child of [%s] id %u, section [%s], %s: [%s] id %u, section [%s], %s %u [%s]%s - left out (#352)",
+		    object->name_replace(), u32(object->ID), object->s_name.c_str(), where,
+		    child ? child->name_replace() : "?", u32(id), child ? child->s_name.c_str() : "?",
+		    !child ? "not found, parent" : twice ? "named twice, parent" : "its parent is",
+		    child ? u32(child->ID_Parent) : 0xffffu, owner ? owner->name_replace() : "none",
+		    owner ? (listed ? ", which lists it" : ", which does not list it") : "");
+		C.erase(C.begin() + i);
+		told = true;
+	}
+	if (told)
+		ai().script_engine().print_stack();
+}
 
 void xrServer::Perform_destroy(CSE_Abstract* object, u32 mode)
 {
@@ -26,10 +61,16 @@ void xrServer::Perform_destroy(CSE_Abstract* object, u32 mode)
 #	endif
 #endif
 
+	kt_drop_stray_children(object, "on destroy");
 	while (!object->children.empty())
 	{
 		CSE_Abstract* child = game->get_entity_from_eid(object->children.back());
-		R_ASSERT2(child, make_string("child registered but not found [%d]",object->children.back()));
+		// kt (#352): a child's reject runs scripts (game_sv_Single::OnDetach registers an item ALife did not know)
+		if (!child || child->ID_Parent != object->ID)
+		{
+			kt_drop_stray_children(object, "while its children were destroyed");
+			continue;
+		}
 		//		Msg					("SLS-CLEAR : REJECT  [%s][%s] FROM [%s][%s]",child->name(),child->name_replace(),object->name(),object->name_replace());
 		Perform_reject(child, object, 2 * NET_Latency);
 #ifdef DEBUG

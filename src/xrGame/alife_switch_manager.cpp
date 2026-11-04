@@ -79,6 +79,8 @@ void CALifeSwitchManager::remove_online(CSE_ALifeDynamicObject* object, bool upd
 	START_PROFILE("ALife/switch/remove_online")
 		object->m_bOnline = false;
 
+		// kt (#352): an item named among the children but not the object's own would be made its own offline
+		server().kt_drop_stray_children(object, "going offline");
 		m_saved_chidren = object->children;
 		CSE_ALifeTraderAbstract* inventory_owner = smart_cast<CSE_ALifeTraderAbstract*>(object);
 		if (inventory_owner)
