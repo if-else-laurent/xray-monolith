@@ -20,7 +20,8 @@
 
 CUIZoneMap::CUIZoneMap()
 	: m_current_map_idx(u8(-1)),
-	  visible(true)
+	  visible(true),
+	  m_kt_under(false)
 {
 	disabled = false;
 }
@@ -192,8 +193,52 @@ void CUIZoneMap::UpdateRadar(Fvector pos)
 	m_background.Update();
 	// seamless world (kt): the actor walked onto another level of the world - its map, its coordinates
 	if (Level().kt_location_name() != m_kt_location) SetupCurrentMap();
+	kt_under(pos);
 	pos.sub(Level().kt_level_offset(*m_kt_location));
 	m_activeMap->SetActivePoint(pos);
+}
+
+// seamless world (kt): the passages under the ground of our seams (a collector, a tunnel) have no
+// sector of their own, so the game's [sub_level_map] cannot switch the minimap there. The boxes of the
+// world (x0, y0, z0, x1, y1, z1 - the world's coordinates) of [kt_minimap_under] in game.ltx (the mod's
+// mod_game_kt_world_map.ltx) do it: while the actor is in one, the map shown takes the picture
+// <texture>#u of its level - the passage as it is, the ground over it far back - if the mod has one.
+static xr_vector<Fbox>& kt_under_boxes()
+{
+	static xr_vector<Fbox> boxes;
+	static bool read = false;
+	if (read) return boxes;
+	read = true;
+	if (!pGameIni->section_exist("kt_minimap_under")) return boxes;
+	CInifile::Sect& section = pGameIni->r_section("kt_minimap_under");
+	for (const auto& item : section.Data)
+	{
+		Fbox b;
+		Fvector a, c;
+		if (item.second.size() && sscanf(item.second.c_str(), "%f,%f,%f,%f,%f,%f", &a.x, &a.y, &a.z, &c.x, &c.y, &c.z) == 6)
+		{
+			b.invalidate();
+			b.modify(a);
+			b.modify(c);
+			boxes.push_back(b);
+		}
+		else
+			Msg("! [kt_minimap_under] %s: six numbers wanted", item.first.c_str());
+	}
+	return boxes;
+}
+
+void CUIZoneMap::kt_under(const Fvector& world)
+{
+	bool under = false;
+	for (const Fbox& b : kt_under_boxes())
+		if (b.contains(world)) { under = true; break; }
+	if (under == m_kt_under) return;
+	string_path texture, file;
+	xr_sprintf(texture, "%s#u", m_activeMap->m_texture.c_str());
+	if (under && !FS.exist(file, "$game_textures$", texture, ".dds")) return; // no such picture: the level's own stays
+	m_kt_under = under;
+	m_activeMap->InitTextureEx(under ? texture : m_activeMap->m_texture.c_str(), m_activeMap->m_shader_name.c_str());
 }
 
 // seamless world (kt), the probe of #191: pixels from the centre of the minimap's circle to where the
@@ -237,6 +282,7 @@ void CUIZoneMap::SetupCurrentMap()
 	// seamless world (kt): the map of the level of the world the actor stands on
 	m_kt_location = Level().kt_location_name();
 	m_activeMap->Initialize(m_kt_location, "hud\\default");
+	m_kt_under = false; // the picture of the level itself again (kt_under)
 
 	Frect r;
 	m_clipFrame.GetAbsoluteRect(r);

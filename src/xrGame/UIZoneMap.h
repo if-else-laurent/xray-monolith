@@ -42,10 +42,12 @@ public:
 	void SetupCurrentMap();
 	shared_str m_kt_location; // seamless world (kt): the level whose map is shown
 	shared_str kt_probe(); // seamless world (kt): where the map puts the actor, see the .cpp
+	bool m_kt_under; // seamless world (kt): the underground picture of the map is shown, see the .cpp
 	void OnSectorChanged(int sector);
 	void Counter_ResetClrAnimation();
 
 private:
 	void SetHeading(float angle);
 	void UpdateRadar(Fvector pos);
+	void kt_under(const Fvector& world);
 };
