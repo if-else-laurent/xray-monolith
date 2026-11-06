@@ -285,7 +285,7 @@ void CSE_ALifeDynamicObject::try_switch_online()
 	alife().switch_online(this);
 }
 
-// Seamless world experiment (kt, #366): an object that stays online (a car, a physic object) has its place
+// Seamless world experiment (kt, #366): a car (it stays online, as a physic object does) has its place
 // moved on the client only - its net_Export carries no position in a single game, so o_Position stays where
 // it was spawned or saved. The radius of such objects measured from there: a GAMMA car in Darkscape, driven
 // 385 m from its spawn (-kt_static_radius 350 x 1.1), went offline under the player and came back online at
@@ -296,10 +296,13 @@ static bool kt_static_from_client(CSE_ALifeDynamicObject* object)
 	if (!g_kt_chunk.active || object->ID == 0 || object->ID_Parent != 0xffff || !g_pGameLevel)
 		return (false);
 	CObject* client = Level().Objects.net_Find(object->ID);
-	if (!client)
+	// only what the actor can drive: the place of every other such object taken from its client (a crate, a
+	// lamp, a thing) crashed Anomaly in CPHFracture::Update a minute after a car came 440 m (2026-11-06)
+	CHolderCustom* holder = client ? smart_cast<CHolderCustom*>(client) : nullptr;
+	if (!holder)
 		return (false);
 	CActor* actor = Actor();
-	const bool held = actor && actor->Holder() && actor->Holder() == smart_cast<CHolderCustom*>(client);
+	const bool held = actor && actor->Holder() == holder;
 	const Fvector& position = client->Position();
 	if (object->o_Position.similar(position, 1.f))
 		return (held);
