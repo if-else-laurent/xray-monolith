@@ -289,15 +289,14 @@ void CSE_ALifeDynamicObject::try_switch_online()
 // moved on the client only - its net_Export carries no position in a single game, so o_Position stays where
 // it was spawned or saved. The radius of such objects measured from there: a GAMMA car in Darkscape, driven
 // 385 m from its spawn (-kt_static_radius 350 x 1.1), went offline under the player and came back online at
-// its spawn with him (2026-11-04). The client's place, its angle and the AI node under it are taken here.
+// its spawn with him (2026-11-04). The client's place is taken here.
 // Returns true when the actor sits in it: what he drives does not go offline.
 static bool kt_static_from_client(CSE_ALifeDynamicObject* object)
 {
 	if (!g_kt_chunk.active || object->ID == 0 || object->ID_Parent != 0xffff || !g_pGameLevel)
 		return (false);
 	CObject* client = Level().Objects.net_Find(object->ID);
-	// only what the actor can drive: the place of every other such object taken from its client (a crate, a
-	// lamp, a thing) crashed Anomaly in CPHFracture::Update a minute after a car came 440 m (2026-11-06)
+	// only what the actor can drive; the rest are left as they were
 	CHolderCustom* holder = client ? smart_cast<CHolderCustom*>(client) : nullptr;
 	if (!holder)
 		return (false);
@@ -306,20 +305,9 @@ static bool kt_static_from_client(CSE_ALifeDynamicObject* object)
 	const Fvector& position = client->Position();
 	if (object->o_Position.similar(position, 1.f))
 		return (held);
+	// the place only: a car has no AI node of its own (used_ai_locations), and its angle and node set here
+	// too crashed Anomaly in CPHFracture::Update once it came 440 m (2026-11-06)
 	object->o_Position.set(position);
-	client->XFORM().getXYZ(object->o_Angle);
-	// the node by the cell only (vertex_id is O(log N)): CLevelGraph::vertex falls back to a search of all
-	// the world's nodes when nothing is under the place
-	if (ai().get_level_graph() && ai().level_graph().valid_vertex_position(position))
-	{
-		const u32 node = ai().level_graph().vertex_id(position);
-		if (ai().level_graph().valid_vertex_id(node))
-		{
-			object->m_tNodeID = node;
-			object->m_tGraphID = ai().cross_table().vertex(node).game_vertex_id();
-			object->m_fDistance = ai().cross_table().vertex(node).distance();
-		}
-	}
 	return (held);
 }
 
