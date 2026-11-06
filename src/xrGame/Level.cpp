@@ -753,6 +753,35 @@ void CLevel::ProcessSpawnEvents()
 			}
 		}
 
+		// kt (Anomaly, #383): a postponed spawn is an old picture of the server. The ownership and destroy events
+		// of its time ran at once and found nothing here; the owner may have gone offline and online again (its
+		// items sent anew, the same ids), or the item may have gone to another owner. Spawned from the old picture,
+		// the item is a second object of its id or is attached to an owner the server does not give it to: the
+		// server's destroy of the owner then takes the owner first and CAttachmentOwner::net_Destroy fails
+		// (attachment_owner.cpp:52, a stalker of the Marsh and his torch, night v0.0.15). Such a spawn is left out.
+		if (parent_id != 0xffff && ai().get_alife())
+		{
+			LPCSTR kt_stale = nullptr;
+			CObject* kt_here = Objects.net_Find(obj_id);
+			CObject* kt_parent = Objects.net_Find(parent_id);
+			auto kt_item = ai().alife().objects().object(obj_id, true);
+			if (kt_here && !kt_here->getDestroy())
+				kt_stale = "its id is already on the client";
+			else if (!kt_parent || kt_parent->getDestroy())
+				kt_stale = kt_parent ? "its owner is being destroyed" : "its owner is not on the client";
+			else if (kt_item && kt_item->ID_Parent != parent_id)
+				kt_stale = "the server gave it to another owner";
+			if (kt_stale)
+			{
+				static u32 kt_stale_spawns = 0;
+				const u32 n = ++kt_stale_spawns;
+				if ((n & (n - 1)) == 0)
+					Msg("* [kt spawn] a postponed spawn of [%s] id %d, owner %d, left out: %s (server owner %d; %u so far)",
+					    section.c_str(), obj_id, parent_id, kt_stale, kt_item ? int(kt_item->ID_Parent) : -1, n);
+				continue;
+			}
+		}
+
 	spawn:
 		u16 dummy16;
 		P.r_begin(dummy16);
