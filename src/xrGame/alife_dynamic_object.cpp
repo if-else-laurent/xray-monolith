@@ -335,11 +335,7 @@ void CSE_ALifeDynamicObject::try_switch_offline()
 	if (!can_switch_offline())
 	{
 		if (can_switch_online() && kt_static_distance(this, alife().graph().actor()->o_Position) > g_kt_chunk.static_radius * 1.1f && g_kt_chunk.static_radius > 0.f)
-		{
-			Msg("* [kt static] %s (%s, id %d) offline beyond the second radius at %.1f %.1f %.1f", name_replace(), s_name.c_str(), ID,
-			    o_Position.x, o_Position.y, o_Position.z);  // TEMP #366
 			alife().switch_offline(this);
-		}
 		return;
 	}
 
