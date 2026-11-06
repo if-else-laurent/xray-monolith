@@ -22,6 +22,8 @@
 #include "map_manager.h"
 #include "ai_space.h"
 #include "../xrEngine/IGame_Level.h"
+#include "Actor.h"
+#include "holder_custom.h"
 
 void CSE_ALifeDynamicObject::on_spawn()
 {
@@ -283,8 +285,37 @@ void CSE_ALifeDynamicObject::try_switch_online()
 	alife().switch_online(this);
 }
 
+// Seamless world experiment (kt, #366): a car (it stays online, as a physic object does) has its place
+// moved on the client only - its net_Export carries no position in a single game, so o_Position stays where
+// it was spawned or saved. The radius of such objects measured from there: a GAMMA car in Darkscape, driven
+// 385 m from its spawn (-kt_static_radius 350 x 1.1), went offline under the player and came back online at
+// its spawn with him (2026-11-04). The client's place is taken here.
+// Returns true when the actor sits in it: what he drives does not go offline.
+static bool kt_static_from_client(CSE_ALifeDynamicObject* object)
+{
+	if (!g_kt_chunk.active || object->ID == 0 || object->ID_Parent != 0xffff || !g_pGameLevel)
+		return (false);
+	CObject* client = Level().Objects.net_Find(object->ID);
+	// only what the actor can drive; the rest are left as they were
+	CHolderCustom* holder = client ? smart_cast<CHolderCustom*>(client) : nullptr;
+	if (!holder)
+		return (false);
+	CActor* actor = Actor();
+	const bool held = actor && actor->Holder() == holder;
+	const Fvector& position = client->Position();
+	if (object->o_Position.similar(position, 1.f))
+		return (held);
+	// the place only: a car has no AI node of its own (used_ai_locations), and its angle and node set here
+	// too crashed Anomaly in CPHFracture::Update once it came 440 m (2026-11-06)
+	object->o_Position.set(position);
+	return (held);
+}
+
 void CSE_ALifeDynamicObject::try_switch_offline()
 {
+	if (!can_switch_offline() && kt_static_from_client(this))
+		return;
+
 	// seamless world experiment (kt): a member of a squad that is online does not go offline on its
 	// own - the squad switches its members. The escort ecologist's squad, held online by the scripts,
 	// had its member taken offline by the distance alone, over and over (2026-10-14).

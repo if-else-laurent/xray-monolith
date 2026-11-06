@@ -3,6 +3,7 @@
 #include "Physics.h"
 #include "PHElement.h"
 #include "PHShell.h"
+#include "IPhysicsShellHolder.h"
 #include "console_vars.h"
 
 #include "../Include/xrRender/Kinematics.h"
@@ -373,6 +374,26 @@ bool CPHFracture::Update(CPHElement* element)
 			if (!J)continue; //hack..
 			J->PSecondElement()->InterpolateGlobalPosition(&joint_position);
 			CODEGeom* root_geom = J->RootGeom();
+			// kt (#366): a joint whose root geom was destroyed (its element deactivated) while the joint lives on.
+			// A car the actor drove 440 m in Anomaly, kept online while the things and anomalies by its spawn went
+			// offline beyond the second radius: from then on a joint of the car itself had its root geom gone, and
+			// geometry() of it, NULL, crashed here (2026-11-06; who deactivates the element is not found yet).
+			// Such a joint is taken as one not applied to the second part.
+			if (root_geom && !root_geom->geometry())
+			{
+				static u32 kt_dead_roots = 0;
+				if ((kt_dead_roots++ & 63) == 0)
+				{
+					IPhysicsShellHolder* own = element->PhysicsRefObject();
+					IPhysicsShellHolder* first = J->PFirst_element() ? J->PFirst_element()->PhysicsRefObject() : nullptr;
+					IPhysicsShellHolder* second = J->PSecondElement() ? J->PSecondElement()->PhysicsRefObject() : nullptr;
+					Msg("* [kt fracture] a joint's root geom is gone (%u times): element of %s (%d), joint %s (%d) - %s (%d)",
+					    kt_dead_roots, own ? own->ObjectName() : "?", own ? own->ObjectID() : -1,
+					    first ? first->ObjectName() : "?", first ? first->ObjectID() : -1,
+					    second ? second->ObjectName() : "?", second ? second->ObjectID() : -1);
+				}
+				root_geom = nullptr;
+			}
 			if (root_geom)
 			{
 				u16 el_position = root_geom->element_position();
