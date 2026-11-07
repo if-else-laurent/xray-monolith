@@ -319,6 +319,33 @@ void CUIGlobalMap::Update()
 }
 
 
+// seamless world (kt): the levels' maps of the world overlap - a seam's joint strip is opaque in every
+// picture of it (the minimap shows one picture) - and each level's map drew its spots right after its
+// own picture, so the picture of a level drawn later covered the actor's and his companions' spots on
+// the level drawn before it (#389, m1). In the world all the pictures go first, then all the spots.
+void CUIGlobalMap::Draw()
+{
+	if (!g_kt_chunk.active)
+	{
+		inherited::Draw();
+		return;
+	}
+	UI().PushScissor(WorkingArea());
+	DrawTexture();
+	CUILevelMap::kt_pass = CUILevelMap::ktPicture;
+	{
+		xrCriticalSectionGuard guard(csUi);
+		for (CUIWindow* w : m_ChildWndList)
+			if (w && w->IsShown() && !w->GetCustomDraw() && smart_cast<CUILevelMap*>(w))
+				w->Draw();
+	}
+	CUILevelMap::kt_pass = CUILevelMap::ktSpots;
+	CUIWindow::Draw();
+	CUILevelMap::kt_pass = CUILevelMap::ktAll;
+	DrawText();
+	UI().PopScissor();
+}
+
 void CUIGlobalMap::ClipByVisRect()
 {
 	Frect r = GetWndRect();
@@ -399,8 +426,17 @@ CUILevelMap::~CUILevelMap()
 {
 }
 
+CUILevelMap::EKtPass CUILevelMap::kt_pass = CUILevelMap::ktAll;
+
 void CUILevelMap::Draw()
 {
+	if (kt_pass == ktPicture)
+	{
+		UI().PushScissor(WorkingArea());
+		DrawTexture();
+		UI().PopScissor();
+		return;
+	}
 	if (MapWnd())
 	{
 		float gmz = MapWnd()->GlobalMap()->GetCurrentZoom().x;
@@ -427,6 +463,14 @@ void CUILevelMap::Draw()
 					sp->SetVisible(sp->m_scale_bounds.x < gmz);
 			}
 		}
+	}
+	if (kt_pass == ktSpots)
+	{
+		UI().PushScissor(WorkingArea());
+		CUIWindow::Draw();
+		DrawText();
+		UI().PopScissor();
+		return;
 	}
 	inherited::Draw();
 }

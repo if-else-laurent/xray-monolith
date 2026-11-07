@@ -112,6 +112,7 @@ public:
 
 	void ClipByVisRect();
 	virtual void Update();
+	virtual void Draw();
 	void Initialize();
 
 	// demonized: pointer to hovered map on PDA
@@ -137,6 +138,9 @@ class CUILevelMap : public CUICustomMap
 public:
 	CUILevelMap(CUIMapWnd*);
 	virtual ~CUILevelMap();
+	// seamless world (kt): what CUIGlobalMap::Draw has a level's map draw - all, the picture, its spots
+	enum EKtPass { ktAll, ktPicture, ktSpots };
+	static EKtPass kt_pass;
 	const Frect& GlobalRect() const { return m_GlobalRect; }
 	virtual void Draw();
 	virtual void Show(bool status);
