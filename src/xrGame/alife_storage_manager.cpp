@@ -226,8 +226,12 @@ void CALifeStorageManager::kt_move_objects(bool to_world)
 		CSE_ALifeDynamicObject* object = (*I).second;
 		// An object that is online keeps on the server the vertex and node it went online with,
 		// however far it has walked since. Which level's coordinates it is saved in is told by the
-		// vertex, so the vertex is brought up to the place first.
+		// vertex, so the vertex is brought up to the place first. Not for one whose vertex is of a level out of
+		// the world: the actor of a change of level to one (a fast travel to Army Warehouses) is online with that
+		// level's vertex and place in its own coordinates, which in the world fall on a node of Cordon (#391)
 		if (!to_world && object->m_bOnline && object->ID_Parent == 0xffff && object->used_ai_locations() &&
+			(!game_graph.valid_vertex_id(object->m_tGraphID) ||
+			 game_graph.kt_in_world(game_graph.vertex(object->m_tGraphID)->level_id())) &&
 			level_graph.valid_vertex_position(object->o_Position))
 		{
 			const u32 node = level_graph.vertex_id(object->o_Position);
