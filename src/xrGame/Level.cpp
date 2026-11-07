@@ -673,7 +673,7 @@ static void kt_orphan_child(CObject* parent, CObject* child)
 	    se ? (se->m_bOnline ? "online" : "offline") : "-");
 	if (!owner)
 		return;
-	if (in_inventory)
+	if (in_inventory && named == child)
 	{
 		// as cl_Process_Event hands the server's reject to the owner: the item's id, then "just before destroy"
 		NET_Packet P;
@@ -682,6 +682,13 @@ static void kt_orphan_child(CObject* parent, CObject* child)
 		P.w_u16(id);
 		P.w_u8(1);
 		owner->OnEvent(P, GE_OWNERSHIP_REJECT);
+	}
+	else if (in_inventory)
+	{
+		// the owners' reject handlers find the item by its id, and the id names another object or none:
+		// drop this very item, or the owner would drop the other one and keep a pointer to this
+		if (CGameObject* game_object = smart_cast<CGameObject*>(child))
+			inventory_owner->inventory().DropItem(game_object, true, true);
 	}
 	if (child->H_Parent() == parent && item && attachment_owner && attachment_owner->attached(item))
 		attachment_owner->detach(item); // not in the inventory, or the owner's reject did not take it
@@ -832,11 +839,12 @@ void CLevel::ProcessSpawnEvents()
 			}
 		}
 		// kt (Anomaly, Monolith, #383): the same for an object without an owner - a second object of an id alive on the
-		// client took the id's slot, and the server's events to the id no longer found the first one
+		// client took the id's slot, and the server's events to the id no longer found the first one. Only the same
+		// section: another one means the id was given anew while its old object lingers, and that spawn is the live one
 		else if (parent_id == 0xffff && ai().get_alife())
 		{
 			CObject* kt_here = Objects.net_Find(obj_id);
-			if (kt_here && !kt_here->getDestroy())
+			if (kt_here && !kt_here->getDestroy() && !xr_strcmp(kt_here->cNameSect().c_str(), section.c_str()))
 			{
 				static u32 kt_second_spawns = 0;
 				const u32 n = ++kt_second_spawns;
