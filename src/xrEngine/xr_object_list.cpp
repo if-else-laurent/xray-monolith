@@ -11,6 +11,9 @@
 
 #include "CustomHUD.h"
 
+ENGINE_API void (*g_kt_orphan_child)(CObject* parent, CObject* child) = nullptr; // kt (#383), see xr_object_list.h
+static bool kt_unloading = false; // kt (#383): Unload destroys what is left in any order - no owner lets go there
+
 class fClassEQ
 {
 	CLASS_ID cls;
@@ -334,7 +337,22 @@ void CObjectList::net_Unregister(CObject* O)
 {
 	//R_ASSERT (O->ID() < 0xffff);
 	if (O->ID() < 0xffff) //demo_spectator can have 0xffff
-		map_NETID[O->ID()] = NULL;
+	{
+		// kt (Anomaly, Monolith, #383): the slot of the id may already name a newer object of the same id (spawned
+		// while this one waited in the destroy queue). Clearing it then left the newer one unknown to every event
+		// of the server - its reject and destroy found nobody, and an item so lost stayed on its owner until the
+		// owner's destroy failed in CAttachmentOwner::net_Destroy. Only this object's own slot is cleared.
+		if (map_NETID[O->ID()] == O)
+			map_NETID[O->ID()] = NULL;
+		else if (map_NETID[O->ID()])
+		{
+			static u32 kt_kept = 0;
+			const u32 n = ++kt_kept;
+			if ((n & (n - 1)) == 0)
+				Msg("* [kt] destroyed [%s] id %d: its id names another object on the client [%s], kept (%u so far, #383)",
+				    *O->cName(), O->ID(), *map_NETID[O->ID()]->cName(), n);
+		}
+	}
 	/*
 	 xr_map<u32,CObject*>::iterator it = map_NETID.find(O->ID());
 	 if ((it!=map_NETID.end()) && (it->second == O)) {
@@ -450,6 +468,7 @@ void CObjectList::Unload()
 		Msg("! objects-leaked: %d", objects_sleeping.size() + objects_active.size());
 
 	// Destroy objects
+	kt_unloading = true;
 	while (objects_sleeping.size())
 	{
 		CObject* O = objects_sleeping.back();
@@ -480,6 +499,7 @@ void CObjectList::Unload()
     // Clear the destroy_queues from dangling pointers
     force_destroy_queue.clear();
     destroy_queue.clear();
+    kt_unloading = false;
 }
 
 CObject* CObjectList::Create(LPCSTR name)
@@ -625,30 +645,24 @@ void CObjectList::register_object_to_destroy(CObject* object_to_destroy)
     else
 	    destroy_queue.push_back(object_to_destroy);
 
-	Objects::iterator it = objects_active.begin();
-	Objects::iterator it_e = objects_active.end();
-	for (; it != it_e; ++it)
-	{
-		CObject* O = *it;
+	// kt (#383): the children are gathered first - letting one go (g_kt_orphan_child) moves objects between
+	// objects_active and objects_sleeping, which the loops of the game walked here
+	Objects kt_children;
+	for (CObject* O : objects_active)
 		if (!O->getDestroy() && O->H_Parent() == object_to_destroy)
-		{
-			Msg("setDestroy called, but not-destroyed child found parent[%d] child[%d]", object_to_destroy->ID(),
-			    O->ID(), Device.dwFrame);
-			O->setDestroy(TRUE);
-		}
-	}
-
-	it = objects_sleeping.begin();
-	it_e = objects_sleeping.end();
-	for (; it != it_e; ++it)
-	{
-		CObject* O = *it;
+			kt_children.push_back(O);
+	for (CObject* O : objects_sleeping)
 		if (!O->getDestroy() && O->H_Parent() == object_to_destroy)
-		{
-			Msg("setDestroy called, but not-destroyed child found parent[%d] child[%d]", object_to_destroy->ID(),
-			    O->ID(), Device.dwFrame);
-			O->setDestroy(TRUE);
-		}
+			kt_children.push_back(O);
+	for (CObject* O : kt_children)
+	{
+		if (O->getDestroy() || O->H_Parent() != object_to_destroy)
+			continue;
+		Msg("setDestroy called, but not-destroyed child found parent[%d] child[%d]", object_to_destroy->ID(),
+		    O->ID(), Device.dwFrame);
+		if (g_kt_orphan_child && !kt_unloading)
+			g_kt_orphan_child(object_to_destroy, O);
+		O->setDestroy(TRUE);
 	}
 }
 

@@ -116,4 +116,9 @@ private:
 	static void dump_list(Objects& v, LPCSTR reason);
 };
 
+// kt (Anomaly, Monolith, #383): set by the game. A child found still on its owner when the owner is set to be destroyed
+// (the server's reject of it never reached the client): the owner lets it go first, as the server's reject would have
+// done; otherwise the child goes before its owner still attached and CAttachmentOwner::net_Destroy fails.
+extern ENGINE_API void (*g_kt_orphan_child)(CObject* parent, CObject* child);
+
 #endif //__XR_OBJECT_LIST_H__

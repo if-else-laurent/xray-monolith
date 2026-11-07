@@ -66,6 +66,9 @@
 
 #include "alife_simulator.h"
 #include "alife_object_registry.h"
+#include "Inventory.h" // kt (#383)
+#include "inventory_item.h"
+#include "attachment_owner.h"
 
 #ifdef DEBUG
 #include "level_debug.h"
@@ -644,6 +647,53 @@ void CLevel::ProcessPrefetchEvents(void* args)
     }
 }
 
+// kt (Anomaly, Monolith, #383): the client is told to destroy an owner while a child is still on it - the server's
+// reject of the child never reached the client (its id named another object or nobody there, see net_Unregister).
+// The engine then set the child to be destroyed after its owner, still attached, and CAttachmentOwner::net_Destroy
+// failed (attachment_owner.cpp:52: a stalker of the Marsh and his torch, soak of night v0.0.15). The owner now lets
+// the child go as on the server's reject just before a destroy; what the client and the server say of the child is
+// told, so that the next time names the path.
+static void kt_orphan_child(CObject* parent, CObject* child)
+{
+	CGameObject* owner = smart_cast<CGameObject*>(parent);
+	CInventoryItem* item = child->cast_inventory_item();
+	CInventoryOwner* inventory_owner = owner ? owner->cast_inventory_owner() : nullptr;
+	CAttachmentOwner* attachment_owner = owner ? owner->cast_attachment_owner() : nullptr;
+	const u16 id = child->ID();
+	CObject* named = Level().Objects.net_Find(id);
+	CSE_ALifeDynamicObject* se = ai().get_alife() ? ai().alife().objects().object(id, true) : nullptr;
+	const bool in_inventory = item && inventory_owner && item->m_pInventory == &inventory_owner->inventory() &&
+		item->CurrPlace() != eItemPlaceUndefined;
+	Msg("! [kt] [%s] id %d is still on [%s] id %d set to be destroyed%s: on the client its id names %s; on the server "
+	    "id %d is %s%s%s, parent %d, %s - let go first (#383)",
+	    *child->cName(), id, *parent->cName(), parent->ID(),
+	    item && attachment_owner && attachment_owner->attached(item) ? ", attached" : "",
+	    named == child ? "it" : named ? *named->cName() : "nobody", id, se ? "[" : "nothing",
+	    se ? se->name_replace() : "", se ? "]" : "", se ? int(se->ID_Parent) : -1,
+	    se ? (se->m_bOnline ? "online" : "offline") : "-");
+	if (!owner)
+		return;
+	if (in_inventory)
+	{
+		// as cl_Process_Event hands the server's reject to the owner: the item's id, then "just before destroy"
+		NET_Packet P;
+		P.write_start();
+		P.read_start();
+		P.w_u16(id);
+		P.w_u8(1);
+		owner->OnEvent(P, GE_OWNERSHIP_REJECT);
+	}
+	if (child->H_Parent() == parent && item && attachment_owner && attachment_owner->attached(item))
+		attachment_owner->detach(item); // not in the inventory, or the owner's reject did not take it
+	if (child->H_Parent() == parent)
+		Msg("! [kt] [%s] id %d stays on [%s] id %d after the reject%s (#383)", *child->cName(), id, *parent->cName(),
+		    parent->ID(), item && attachment_owner && attachment_owner->attached(item) ? ", still attached" : ", detached");
+}
+static struct kt_orphan_child_set
+{
+	kt_orphan_child_set() { g_kt_orphan_child = kt_orphan_child; }
+} kt_orphan_child_set_;
+
 // demonized: If called manually, be aware of ProcessPrefetchEvents thread, which may modify spawn_events queue at the same time, maybe fix later
 void CLevel::ProcessSpawnEvents()
 {
@@ -778,6 +828,21 @@ void CLevel::ProcessSpawnEvents()
 				if ((n & (n - 1)) == 0)
 					Msg("* [kt spawn] a postponed spawn of [%s] id %d, owner %d, left out: %s (server owner %d; %u so far)",
 					    section.c_str(), obj_id, parent_id, kt_stale, kt_item ? int(kt_item->ID_Parent) : -1, n);
+				continue;
+			}
+		}
+		// kt (Anomaly, Monolith, #383): the same for an object without an owner - a second object of an id alive on the
+		// client took the id's slot, and the server's events to the id no longer found the first one
+		else if (parent_id == 0xffff && ai().get_alife())
+		{
+			CObject* kt_here = Objects.net_Find(obj_id);
+			if (kt_here && !kt_here->getDestroy())
+			{
+				static u32 kt_second_spawns = 0;
+				const u32 n = ++kt_second_spawns;
+				if ((n & (n - 1)) == 0)
+					Msg("* [kt spawn] a postponed spawn of [%s] id %d left out: its id is already on the client as [%s] (%u so far)",
+					    section.c_str(), obj_id, *kt_here->cName(), n);
 				continue;
 			}
 		}

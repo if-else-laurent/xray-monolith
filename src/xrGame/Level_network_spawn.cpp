@@ -123,6 +123,19 @@ void CLevel::g_sv_Spawn(CSE_Abstract* E)
 	if (GameID() == eGameIDSingle) psNET_Flags.set(NETFLAG_MINIMIZEUPDATES,TRUE);
 	else psNET_Flags.set(NETFLAG_MINIMIZEUPDATES,FALSE);
 
+	// kt (Anomaly, Monolith, #383): a second object of an id alive on the client takes the id's slot; the first one is
+	// then unknown to the server's events (its reject, its destroy). Told, counted at 1, 2, 4...
+	if (E->ID < 0xffff)
+		if (CObject* kt_here = Objects.net_Find(E->ID))
+		{
+			static u32 kt_seconds = 0;
+			const u32 n = ++kt_seconds;
+			if ((n & (n - 1)) == 0)
+				Msg("! [kt] spawn of [%s] id %d, parent %d: the id is already on the client as [%s], parent %d%s (%u so far, #383)",
+				    *E->s_name, E->ID, E->ID_Parent, *kt_here->cName(), kt_here->H_Parent() ? kt_here->H_Parent()->ID() : 0xffff,
+				    kt_here->getDestroy() ? ", being destroyed" : "", n);
+		}
+
 	// Client spawn
 	//	T.Start		();
 	CObject* O = Objects.Create(*E->s_name);
