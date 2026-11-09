@@ -300,8 +300,13 @@ void xrLogger::InternalCloseLog()
 	InternalPrintAllRecords();
 	InternalFlushLog();
 
-	IWriter* tempCopy = (IWriter*)logFile;
-	logFile = nullptr;
+	IWriter* tempCopy = nullptr;
+	{
+		// kt (Monolith): the log thread may be writing a line right now (#422)
+		xrCriticalSectionGuard fileGuard(logFlushGuard);
+		tempCopy = (IWriter*)logFile;
+		logFile = nullptr;
+	}
 
 	if (tempCopy != nullptr)
 		FS.w_close(tempCopy);
@@ -349,12 +354,17 @@ void xrLogger::InternalOpenLogFile()
 	CHECK_OR_EXIT(logFile, "Can't create log file");
 }
 
-void xrLogger::InternalPrintRecord()
+bool xrLogger::InternalPrintRecord()
 {
 	LogRecord theRecord;
 
+	// kt (Monolith): the emptiness check and the pop go under one lock - at the close of the log two
+	// threads print the queue (the log thread and the one closing it), and one could read front() of
+	// a queue the other had just emptied: a crash on every such quit (#422)
 	{
 		xrCriticalSectionGuard g(&logDataGuard);
+		if (logData->empty())
+			return false;
 		theRecord = logData->front();
 		logData->pop();
 	}
@@ -381,6 +391,10 @@ void xrLogger::InternalPrintRecord()
 		}
 
 		// demonized: add tempLogData in case the logFile initialization takes time
+		// kt (Monolith): the file and the lines waiting for it are touched by one thread at a time; the
+		// thread closing the log takes the file away under the same lock (#422)
+		{
+		xrCriticalSectionGuard fileGuard(logFlushGuard);
 		if (logFile != nullptr)
 		{
 			IWriter* mutableWritter = (IWriter*)logFile;
@@ -403,6 +417,7 @@ void xrLogger::InternalPrintRecord()
 		{
 			tempLogData.push(finalLine);
 		}
+		}
 
 		xrCriticalSectionGuard guard(&logCallbackGuard);
 		for (const LogCallback& FnCallback : logCallbackList)
@@ -410,18 +425,13 @@ void xrLogger::InternalPrintRecord()
 			FnCallback(finalLine);
 		}
 	}
+	return true;
 }
 
 void xrLogger::InternalPrintAllRecords()
 {
-	while (true)
+	while (InternalPrintRecord())
 	{
-		{
-			xrCriticalSectionGuard g(&logDataGuard);
-			if (logData->empty())
-				break;
-		}
-		InternalPrintRecord();
 	}
 }
 

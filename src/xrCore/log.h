@@ -51,7 +51,7 @@ private:
 
 	void InternalOpenLogFile();
 
-	void InternalPrintRecord();
+	bool InternalPrintRecord();
 	void InternalPrintAllRecords();
 
 	void InternalFlushLog();
