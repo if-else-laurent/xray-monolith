@@ -89,6 +89,21 @@ void CSE_ALifeDynamicObject::switch_offline()
 		ai().script_engine().print_stack();
 		return;
 	}
+	// kt (debug, #441): a member of an online squad switched offline on its own goes through remove_online with
+	// the registries - onto the schedule and the level's list - and its squad brings it back online at the next
+	// update with the line "was on the schedule of A-Life while offline" (the night of v0.0.19, a simulation squad
+	// at Garbage right after it came online). Who did it - the Lua stack, or the outer switch_offline in C++.
+	if (g_kt_chunk.active)
+		if (const CSE_ALifeMonsterAbstract* monster = smart_cast<const CSE_ALifeMonsterAbstract*>(this))
+			if (monster->m_group_id != 0xffff)
+				if (const CSE_ALifeDynamicObject* squad = ai().alife().objects().object(monster->m_group_id, true))
+					if (squad->m_bOnline)
+					{
+						Msg("! [kt alife] member [%s] id %u of the online squad [%s] goes offline on its own, inside switch_offline of %s %u (#441)",
+						    name_replace(), u32(ID), squad->name_replace(),
+						    kt_switching ? kt_switching->name_replace() : "nothing", kt_switching ? u32(kt_switching->ID) : 0u);
+						ai().script_engine().print_stack();
+					}
 	CSE_ALifeDynamicObject* outer = kt_switching;
 	kt_switching = this;
 	m_bOnline = false;
