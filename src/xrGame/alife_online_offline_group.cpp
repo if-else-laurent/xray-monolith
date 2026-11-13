@@ -296,7 +296,8 @@ static void kt_bring_members_online(CSE_ALifeOnlineOfflineGroup* squad)
 			    kt_land_absent(member) ? "its land not loaded" : "off the world", kt_with->name_replace(), VPUSH(kt_with->o_Position));
 			// off the graph at the old vertex first: switch_online takes it off the graph at the vertex it has then,
 			// and one put there alone (switch_offline with registries) would stay at the old one, a dangling entry
-			squad->alife().graph().remove(member, member->m_tGraphID, false);
+			if (ai().game_graph().valid_vertex_id(member->m_tGraphID))	// m_objects is indexed by the vertex
+				squad->alife().graph().remove(member, member->m_tGraphID, false);
 			member->o_Position = kt_with->o_Position;
 			member->m_tNodeID = kt_with->m_tNodeID;
 			member->m_tGraphID = kt_with->m_tGraphID;
