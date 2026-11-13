@@ -22,6 +22,7 @@
 #include "level_path_builder.h"
 #include "detail_path_builder.h"
 #include "mt_config.h"
+#include "../xrEngine/IGame_Level.h"
 #include "../../script_game_object.h"
 
 void CMovementManager::show_game_path_info()
@@ -119,6 +120,14 @@ void CMovementManager::process_game_path()
 				                                                                                     ->level_id())
 				{
 					m_path_state = ePathStateTeleport;
+					// kt (#404, #441): in the world the levels of the world are one level of the graph; a path that
+					// leads off them (a target on Agroprom) teleports the object to the next level's vertex, as the
+					// game does, and the movement waits in this state for good if that does not take it away.
+					if (g_kt_chunk.active)
+						Msg("* [kt path] [%s] id %u: the game path goes off the world at vertex %u (%s), from vertex %u - teleported (#404)",
+						    object().cName().c_str(), u32(object().ID()), u32(game_path().intermediate_vertex_id()),
+						    ai().game_graph().header().level(ai().game_graph().vertex(game_path().intermediate_vertex_id())->level_id()).name().c_str(),
+						    u32(object().ai_location().game_vertex_id()));
 					VERIFY(ai().get_alife());
 					VERIFY(
 						ai().alife().graph().level().level_id() == ai().game_graph().vertex(object().ai_location().

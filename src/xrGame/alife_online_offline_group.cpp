@@ -15,6 +15,7 @@
 #include "alife_graph_registry.h"
 #include "alife_schedule_registry.h"
 #include "game_level_cross_table.h"
+#include "game_graph.h"
 #include "alife_online_offline_group_brain.h"
 #include "level_graph.h"
 #include "alife_monster_movement_manager.h"
@@ -270,8 +271,38 @@ static void kt_bring_members_online(CSE_ALifeOnlineOfflineGroup* squad)
 	for (CSE_ALifeOnlineOfflineGroup::MEMBERS::const_iterator I = members.begin(); I != members.end(); ++I)
 	{
 		CSE_ALifeDynamicObject* member = (*I).second;
-		if (member->m_bOnline || kt_land_absent(member))
+		if (member->m_bOnline)
 			continue;
+		// kt (Anomaly, #349, #441): a member offline where the land is not loaded, or on a vertex off the world (its own
+		// game path took it there: GE_TELEPORT_OBJECT puts it on the other level's vertex and that level's node), was left
+		// there for good: nobody walks it - the squad is online and stands for it on no schedule. A companion stood
+		// offline 660 m off through a whole sleep (#349). It is brought to a member of its squad online, as squads keep
+		// their members together offline (update); with none online it waits as before.
+		if (kt_land_absent(member) || !ai().game_graph().valid_vertex_id(member->m_tGraphID) ||
+			!ai().game_graph().kt_in_world(ai().game_graph().kt_level(member->m_tGraphID)) ||
+			!ai().level_graph().valid_vertex_id(member->m_tNodeID))
+		{
+			const CSE_ALifeDynamicObject* kt_with = nullptr;
+			for (CSE_ALifeOnlineOfflineGroup::MEMBERS::const_iterator J = members.begin(); J != members.end(); ++J)
+				if ((*J).second->m_bOnline && ai().level_graph().valid_vertex_id((*J).second->m_tNodeID))
+				{
+					kt_with = (*J).second;
+					break;
+				}
+			if (!kt_with)
+				continue;
+			Msg("* [kt alife] %s: member %s of the online squad is offline at [%.1f %.1f %.1f] vertex %u, %s: brought to %s at [%.1f %.1f %.1f] (#349)",
+			    squad->name_replace(), member->name_replace(), VPUSH(member->o_Position), u32(member->m_tGraphID),
+			    kt_land_absent(member) ? "its land not loaded" : "off the world", kt_with->name_replace(), VPUSH(kt_with->o_Position));
+			// off the graph at the old vertex first: switch_online takes it off the graph at the vertex it has then,
+			// and one put there alone (switch_offline with registries) would stay at the old one, a dangling entry
+			squad->alife().graph().remove(member, member->m_tGraphID, false);
+			member->o_Position = kt_with->o_Position;
+			member->m_tNodeID = kt_with->m_tNodeID;
+			member->m_tGraphID = kt_with->m_tGraphID;
+			if (CSE_ALifeMonsterAbstract* monster = smart_cast<CSE_ALifeMonsterAbstract*>(member))
+				monster->m_tNextGraphID = kt_with->m_tGraphID;
+		}
 		Msg("* [kt alife] %s: member %s of the online squad is offline, brought online", squad->name_replace(), member->name_replace());
 		// as register_member brings an offline member into an online squad: off the schedule and
 		// the graph (switch_online), off the level's list. add_online(member, false), as the squad's
