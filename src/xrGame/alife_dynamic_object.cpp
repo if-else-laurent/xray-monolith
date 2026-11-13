@@ -89,20 +89,31 @@ void CSE_ALifeDynamicObject::switch_offline()
 		ai().script_engine().print_stack();
 		return;
 	}
-	// kt (debug, #441): a member of an online squad switched offline on its own goes through remove_online with
-	// the registries - onto the schedule and the level's list - and its squad brings it back online at the next
-	// update with the line "was on the schedule of A-Life while offline" (the night of v0.0.19, a simulation squad
-	// at Garbage right after it came online). Who did it - the Lua stack, or the outer switch_offline in C++.
+	// kt (Anomaly, #441): a member of an online squad switched offline on its own - teleport_object of a man online,
+	// safe_release_manager handed a living member, the logic's switch_offline - went through remove_online with the
+	// registries: onto the schedule of A-Life and the vertex of the graph, though its squad stands for it there
+	// (register_member). The squad, still online, brought it back at its next update with the line "was on the
+	// schedule of A-Life while offline" (nights of v0.0.19 and v0.0.20: simulation squads, a man at a time, the same
+	// man twice in a row while the release waited). It goes offline as its squad takes its members offline: without
+	// the registries. The squad brings it back (kt_bring_members_online) or the release lets it go as before.
+	// The Lua stack, or the outer switch_offline in C++, names who did it.
 	if (g_kt_chunk.active)
 		if (const CSE_ALifeMonsterAbstract* monster = smart_cast<const CSE_ALifeMonsterAbstract*>(this))
 			if (monster->m_group_id != 0xffff)
-				if (const CSE_ALifeDynamicObject* squad = ai().alife().objects().object(monster->m_group_id, true))
+				if (const CSE_ALifeOnlineOfflineGroup* squad = smart_cast<const CSE_ALifeOnlineOfflineGroup*>(ai().alife().objects().object(monster->m_group_id, true)))
 					if (squad->m_bOnline)
 					{
-						Msg("! [kt alife] member [%s] id %u of the online squad [%s] goes offline on its own, inside switch_offline of %s %u (#441)",
+						Msg("* [kt alife] member [%s] id %u of the online squad [%s] goes offline on its own, off the schedule as with its squad, inside switch_offline of %s %u (#441)",
 						    name_replace(), u32(ID), squad->name_replace(),
 						    kt_switching ? kt_switching->name_replace() : "nothing", kt_switching ? u32(kt_switching->ID) : 0u);
 						ai().script_engine().print_stack();
+						CSE_ALifeDynamicObject* outer = kt_switching;
+						kt_switching = this;
+						m_bOnline = false;
+						alife().remove_online(this, false);
+						clear_client_data();
+						kt_switching = outer;
+						return;
 					}
 	CSE_ALifeDynamicObject* outer = kt_switching;
 	kt_switching = this;
