@@ -435,9 +435,10 @@ void CALifeUpdateManager::teleport_object(ALife::_OBJECT_ID id, GameGraph::_GRAP
 	}
 #endif
 
-	// kt (Anomaly, #441): a man online is switched offline first, as before; a member of an online squad goes offline
-	// without the registries now (CSE_ALifeDynamicObject::switch_offline) and is then only placed, as below
-	if (object->m_bOnline)
+	// kt (Anomaly, #441): in the world a man online is switched offline before the check below: a member of an
+	// online squad goes offline without the registries now (CSE_ALifeDynamicObject::switch_offline) and is then only
+	// placed. Without the world's keys the order is the game's.
+	if (g_kt_chunk.active && object->m_bOnline)
 		switch_offline(object);
 	CSE_ALifeMonsterAbstract* monster_abstract = smart_cast<CSE_ALifeMonsterAbstract*>(object);
 	// kt (Anomaly, #206): a member of a squad that is offline is on no vertex of the graph, on no level's list and
@@ -456,6 +457,8 @@ void CALifeUpdateManager::teleport_object(ALife::_OBJECT_ID id, GameGraph::_GRAP
 		monster_abstract->m_tNextGraphID = game_vertex_id;
 		return;
 	}
+	if (object->m_bOnline)
+		switch_offline(object);
 	graph().change(object, object->m_tGraphID, game_vertex_id);
 	object->m_tNodeID = level_vertex_id;
 	object->o_Position = position;

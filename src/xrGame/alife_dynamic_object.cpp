@@ -106,7 +106,11 @@ void CSE_ALifeDynamicObject::switch_offline()
 						Msg("* [kt alife] member [%s] id %u of the online squad [%s] goes offline on its own, off the schedule as with its squad, inside switch_offline of %s %u (#441)",
 						    name_replace(), u32(ID), squad->name_replace(),
 						    kt_switching ? kt_switching->name_replace() : "nothing", kt_switching ? u32(kt_switching->ID) : 0u);
-						ai().script_engine().print_stack();
+						// the stack once a man: a release or a logic that takes him offline at every update
+						// while his squad brings him back would print it every update
+						static xr_set<u16> kt_told;
+						if (kt_told.insert(ID).second)
+							ai().script_engine().print_stack();
 						CSE_ALifeDynamicObject* outer = kt_switching;
 						kt_switching = this;
 						m_bOnline = false;
