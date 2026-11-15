@@ -805,16 +805,16 @@ void CKinematicsAnimated::Load(const char* N, IReader* data, u32 dwFlags)
 
 		// Check compatibility
 		m_Motions.push_back(SMotionsSlot());
-		bool create_res = true;
-		if (!g_pMotionsContainer->has(_path)) //optimize fs operations
+		// kt (#467, Anomaly): dock the loaded motions in one step (has() then dock could race the sweep's
+		// clean); not there - read the file
+		bool create_res = m_Motions.back().motions.create(_path, NULL, bones);
+		if (!create_res)
 		{
 			IReader* MS = FS.r_open(fn);
 			create_res = m_Motions.back().motions.create(_path, MS, bones);
 			FS.r_close(MS);
 		}
-		if (create_res)
-			m_Motions.back().motions.create(_path, NULL, bones);
-		else
+		if (!create_res)
 		{
 			m_Motions.pop_back();
 			Msg("! error in model [%s]. Unable to load motion file '%s', section '%s'.", N, _path, current_player_hud_sect.c_str());

@@ -178,33 +178,38 @@ dxRender_Visual* CModelPool::Instance_Register(LPCSTR N, dxRender_Visual* V)
 {
 	// Registration
 	shared_str S(N);
-	xrSRWLockGuard g(ModelsLock);
-
-	// Double-check for duplicate model
-	for (auto& M : Models)
+	dxRender_Visual* existing = nullptr;
 	{
-		if (M.name == S)
+		xrSRWLockGuard g(ModelsLock);
+
+		// Double-check for duplicate model
+		for (auto& M : Models)
 		{
-			// Increment the reference count
-			M.refs++;
+			if (M.name == S)
+			{
+				existing = M.model;
+				break;
+			}
+		}
 
-			// Destroy the redundant one we just loaded
-			V->Release();
-			xr_delete(V);
+		if (!existing)
+		{
+			ModelDef M;
+			M.name = S;
+			M.model = V;
 
-			// Return the existing model
-			return M.model;
+			auto it = std::lower_bound(Models.begin(), Models.end(), V, std::less<>{});
+			Models.insert(it, std::move(M));
+			return V;
 		}
 	}
 
-	ModelDef M;
-	M.name = S;
-	M.model = V;
-
-	auto it = std::lower_bound(Models.begin(), Models.end(), V, std::less<>{});
-	Models.insert(it, std::move(M));
-
-	return V;
+	// kt (#467, Monolith): the redundant copy is destroyed after ModelsLock - its children go back through
+	// Delete/kt_lock, and Create holds kt_lock while it takes ModelsLock (lock order kt_lock -> ModelsLock).
+	// No refs++ here: the caller (Create) counts the reference by Instance_Duplicate.
+	V->Release();
+	xr_delete(V);
+	return existing;
 }
 
 
@@ -348,11 +353,13 @@ dxRender_Visual* CModelPool::CreateChild(LPCSTR name, IReader* data)
 
 	// 1. Search for already loaded model
 	{
-		// kt (#467, Anomaly): a registered base is always cloned (counted); given itself to a parent being
-		// loaded, it was freed with the parent while Models still named it
+		// kt (#467, Anomaly): a registered base is never given itself - it was freed with the parent while
+		// Models still named it. Children of a registered model being loaded are its own (a skeleton's m_lod
+		// is freed by ~CKinematics as an original), so then an own copy is read below; otherwise a clone.
 		xrCriticalSectionGuard kt_guard(&kt_lock);
-		if (dxRender_Visual* Base = Instance_Find(low_name))
-			return Instance_Duplicate(Base);
+		if (kt_children_duplicate)
+			if (dxRender_Visual* Base = Instance_Find(low_name))
+				return Instance_Duplicate(Base);
 	}
 	dxRender_Visual* Base;
 	//.	if (0==Base) Base	 	= Instance_Load(name,data,FALSE);
@@ -419,6 +426,7 @@ void CModelPool::Delete(dxRender_Visual* &V, BOOL bDiscard)
 	if (g_bRendering)
 	{
 		VERIFY(!bDiscard);
+		xrCriticalSectionGuard kt_guard(&kt_lock); // kt (#467): the prefetch thread may queue here too
 		ModelsToDelete.push_back(V);
 	}
 	else
@@ -430,9 +438,12 @@ void CModelPool::Delete(dxRender_Visual* &V, BOOL bDiscard)
 
 void CModelPool::DeleteQueue()
 {
-	for (u32 it = 0; it < ModelsToDelete.size(); it++)
-		DeleteInternal(ModelsToDelete[it]);
-	ModelsToDelete.clear();
+	{
+		xrCriticalSectionGuard kt_guard(&kt_lock); // kt (#467): Delete queues under it (recursive in DeleteInternal)
+		for (u32 it = 0; it < ModelsToDelete.size(); it++)
+			DeleteInternal(ModelsToDelete[it]);
+		ModelsToDelete.clear();
+	}
 
 	kt_Sweep(); // kt (#467): called each frame by every renderer's OnFrame, outside rendering
 }
@@ -629,7 +640,8 @@ void CModelPool::kt_Sweep()
 	kt_last_sweep = now;
 
 	xrCriticalSectionGuard kt_guard(&kt_lock);
-	const u32 idle_last = u32(ps_r__kt_model_idle) * 1000;
+	// at least a minute: a base registered by Create is duplicated a moment later, outside kt_lock between
+	const u32 idle_last = u32(_max(ps_r__kt_model_idle, 60)) * 1000;
 	const u32 idle_extra = idle_last / 4;
 	u32 budget = 32; // a frame does not pay for more
 	bool freed = false;

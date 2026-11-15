@@ -289,8 +289,11 @@ motions_value* motions_container::dock(shared_str key, IReader* data, vecBones* 
 	if (I != container.end()) result = I->second;
 	if (0 == result)
 	{
+		// kt (#467, Anomaly): the sweep may clean an unreferenced entry between has() and dock - no data,
+		// no entry: the caller reads the file
+		if (!data)
+			return 0;
 		// loading motions
-		VERIFY(data);
 		result = xr_new<motions_value>();
 		result->m_dwReference = 0;
 		BOOL bres = result->load(key.c_str(), data, bones);
