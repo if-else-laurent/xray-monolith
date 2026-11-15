@@ -221,7 +221,7 @@ struct ENGINE_API motions_value
 	accel_map m_cycle; // motion data itself (shared)
 	accel_map m_fx; // motion data itself (shared)
 	CPartition m_partition; // partition
-	u32 m_dwReference;
+	xr_atomic_u32 m_dwReference; // kt (#467): atomic - the prefetch and the main thread load at once
 	BoneMotionMap m_motions;
 	MotionDefVec m_mdefs;
 
@@ -247,11 +247,12 @@ class ENGINE_API motions_container
 {
 	DEFINE_MAP(shared_str, motions_value*, SharedMotionsMap, SharedMotionsMapIt);
 	SharedMotionsMap container;
+	xrCriticalSection cs; // kt (#467): dock on the prefetch thread, clean in the model pool's sweep
 public:
 	motions_container();
 	~motions_container();
 	bool has(shared_str key);
-	motions_value* dock(shared_str key, IReader* data, vecBones* bones);
+	motions_value* dock(shared_str key, IReader* data, vecBones* bones); // kt (#467): takes a reference
 	void dump();
 	void clean(bool force_destroy);
 	void kt_stats(u32& items, u32& unused, u32& kb, u32& unused_kb); // kt (#467)
@@ -268,8 +269,7 @@ protected:
 	void destroy()
 	{
 		if (0 == p_) return;
-		p_->m_dwReference--;
-		if (0 == p_->m_dwReference) p_ = 0;
+		if (0 == --p_->m_dwReference) p_ = 0;
 	}
 
 public:

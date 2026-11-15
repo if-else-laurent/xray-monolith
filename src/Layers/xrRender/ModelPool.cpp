@@ -29,6 +29,10 @@
 	#include "IGame_Persistent.h"
 #endif
 
+// kt (#467): "children of the model being loaded are cloned" - was the member bAllowChildrenDuplicate,
+// shared by the main and the prefetch thread, which now load at the same time
+static thread_local bool kt_children_duplicate = true;
+
 dxRender_Visual* CModelPool::Instance_Create(u32 type)
 {
 	dxRender_Visual* V = NULL;
@@ -287,45 +291,51 @@ dxRender_Visual* CModelPool::Create(const char* name, IReader* data, bool assert
 	strlwr(low_name);
 	if (strext(low_name)) *strext(low_name) = 0;
 
-	xrCriticalSectionGuard kt_guard(&kt_lock); // kt (#467): the prefetch thread creates too
-	
-	// 0. Search POOL
-	POOL_IT it = Pool.find(low_name);
-	if (it != Pool.end())
+	// kt (#467): Pool and Registry under kt_lock (the prefetch thread creates too); the base is read
+	// without it, so that the main thread does not wait for a model the prefetch thread is reading
 	{
-		// 1. Instance found
-		dxRender_Visual* Model = it->second;
-		Model->Spawn();
-		Pool.erase(it);
-		kt_pool_time.erase(Model);
-		return Model;
-	}
-	else
-	{
-		// 1. Search for already loaded model (reference, base model)
-		dxRender_Visual* Base = Instance_Find(low_name);
+		xrCriticalSectionGuard kt_guard(&kt_lock);
 
-		if (0 == Base)
+		// 0. Search POOL
+		POOL_IT it = Pool.find(low_name);
+		if (it != Pool.end())
 		{
-			// 2. If not found
-			bAllowChildrenDuplicate = FALSE;
-			if (data) Base = Instance_Load(low_name, data, TRUE);
-			else Base = Instance_Load(low_name, TRUE, assert);
-			if (!Base)
-			{
-				// If not found and assert is false, return nullptr
-				return nullptr;
-			}
-			bAllowChildrenDuplicate = TRUE;
-#ifdef _EDITOR
-			if (!Base)		return 0;
-#endif
+			// 1. Instance found
+			dxRender_Visual* Model = it->second;
+			Model->Spawn();
+			Pool.erase(it);
+			kt_pool_time.erase(Model);
+			return Model;
 		}
-		// 3. If found - return (cloned) reference
-		dxRender_Visual* Model = Instance_Duplicate(Base);
-		Registry.insert(mk_pair(Model, low_name));
-		return Model;
+
+		// 1. Search for already loaded model (reference, base model); if found - return (cloned) reference
+		if (dxRender_Visual* Base = Instance_Find(low_name))
+		{
+			dxRender_Visual* Model = Instance_Duplicate(Base);
+			Registry.insert(mk_pair(Model, low_name));
+			return Model;
+		}
 	}
+
+	// 2. If not found - load and register it (Instance_Register keeps the first of two loaded at once)
+	const bool children_duplicate = kt_children_duplicate;
+	kt_children_duplicate = false;
+	dxRender_Visual* Loaded = data ? Instance_Load(low_name, data, TRUE) : Instance_Load(low_name, TRUE, assert);
+	kt_children_duplicate = children_duplicate;
+	if (!Loaded)
+	{
+		// If not found and assert is false, return nullptr
+		return nullptr;
+	}
+
+	// 3. Return (cloned) reference; the base was registered just now, a sweep lets it go only when idle
+	xrCriticalSectionGuard kt_guard(&kt_lock);
+	dxRender_Visual* Base = Instance_Find(low_name);
+	if (!Base)
+		return nullptr;
+	dxRender_Visual* Model = Instance_Duplicate(Base);
+	Registry.insert(mk_pair(Model, low_name));
+	return Model;
 }
 
 dxRender_Visual* CModelPool::CreateChild(LPCSTR name, IReader* data)
@@ -336,18 +346,20 @@ dxRender_Visual* CModelPool::CreateChild(LPCSTR name, IReader* data)
 	strlwr(low_name);
 	if (strext(low_name)) *strext(low_name) = 0;
 
-	xrCriticalSectionGuard kt_guard(&kt_lock);
-
 	// 1. Search for already loaded model
-	dxRender_Visual* Base = Instance_Find(low_name);
-	//.	if (0==Base) Base	 	= Instance_Load(name,data,FALSE);
-	if (0 == Base)
 	{
-		if (data) Base = Instance_Load(low_name, data,FALSE);
-		else Base = Instance_Load(low_name,FALSE);
+		// kt (#467, Anomaly): a registered base is always cloned (counted); given itself to a parent being
+		// loaded, it was freed with the parent while Models still named it
+		xrCriticalSectionGuard kt_guard(&kt_lock);
+		if (dxRender_Visual* Base = Instance_Find(low_name))
+			return Instance_Duplicate(Base);
 	}
+	dxRender_Visual* Base;
+	//.	if (0==Base) Base	 	= Instance_Load(name,data,FALSE);
+	if (data) Base = Instance_Load(low_name, data,FALSE);
+	else Base = Instance_Load(low_name,FALSE);
 
-	dxRender_Visual* Model = bAllowChildrenDuplicate ? Instance_Duplicate(Base) : Base;
+	dxRender_Visual* Model = kt_children_duplicate ? Instance_Duplicate(Base) : Base;
 	return Model;
 }
 
@@ -509,10 +521,25 @@ void CModelPool::Prefetch()
 
 void CModelPool::Prefetch_One(LPCSTR N, bool assert)
 {
-	xrCriticalSectionGuard kt_guard(&kt_lock); // kt (#467): runs on the prefetch thread
+	// kt (#467): runs on the prefetch thread. A model still in the pool is left as it is (the level's set of
+	// prefetched names no longer skips a model the sweep let go). The instance goes back straight into the
+	// pool: Delete would queue it into ModelsToDelete while rendering, unlocked against the main thread.
+	if (Exists_kt(N))
+		return;
 	dxRender_Visual* V = Create(N, 0, assert);
 	if (V)
-		Delete(V,FALSE);
+		DeleteInternal(V, FALSE);
+}
+
+bool CModelPool::Exists_kt(LPCSTR N)
+{
+	string_path low_name;
+	VERIFY(xr_strlen(N) < sizeof(low_name));
+	xr_strcpy(low_name, N);
+	strlwr(low_name);
+	if (strext(low_name)) *strext(low_name) = 0;
+	xrCriticalSectionGuard kt_guard(&kt_lock);
+	return Pool.find(low_name) != Pool.end() || Instance_Find(low_name);
 }
 
 bool CModelPool::Exists(LPCSTR N)
@@ -523,16 +550,8 @@ bool CModelPool::Exists(LPCSTR N)
 	strlwr(low_name);
 	if (strext(low_name)) *strext(low_name) = 0;
 
-	xrCriticalSectionGuard kt_guard(&kt_lock);
-
-	// Search pool and return early if exists
-	POOL_IT it = Pool.find(low_name);
-	if (it != Pool.end())
-		return true;
-
-	// Search for already loaded model (reference, base model) and return early if exists
-	dxRender_Visual* Base = Instance_Find(low_name);
-	if (Base)
+	// Search pool and loaded models (reference, base model) and return early if exists
+	if (Exists_kt(low_name))
 		return true;
 
 	// Prefetch model

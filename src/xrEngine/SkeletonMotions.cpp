@@ -277,11 +277,13 @@ motions_container::~motions_container()
 
 bool motions_container::has(shared_str key)
 {
+	xrCriticalSectionGuard guard(&cs);
 	return (container.find(key) != container.end());
 }
 
 motions_value* motions_container::dock(shared_str key, IReader* data, vecBones* bones)
 {
+	xrCriticalSectionGuard guard(&cs);
 	motions_value* result = 0;
 	SharedMotionsMapIt I = container.find(key);
 	if (I != container.end()) result = I->second;
@@ -297,11 +299,14 @@ motions_value* motions_container::dock(shared_str key, IReader* data, vecBones* 
 		else
 			xr_delete(result);
 	}
+	if (result)
+		result->m_dwReference++; // kt (#467): under cs, before clean() can see 0
 	return result;
 }
 
 void motions_container::clean(bool force_destroy)
 {
+	xrCriticalSectionGuard guard(&cs);
 	SharedMotionsMapIt it = container.begin();
 	SharedMotionsMapIt _E = container.end();
 	if (force_destroy)
@@ -336,6 +341,7 @@ void motions_container::clean(bool force_destroy)
 
 void motions_container::kt_stats(u32& items, u32& unused, u32& kb, u32& unused_kb)
 {
+	xrCriticalSectionGuard guard(&cs);
 	u64 sz = 0, unused_sz = 0;
 	items = unused = 0;
 	for (SharedMotionsMapIt it = container.begin(); it != container.end(); ++it)
@@ -362,7 +368,7 @@ void motions_container::dump()
 	for (u32 k = 0; it != _E; k++, it++)
 	{
 		sz += it->second->mem_usage();
-		Msg("#%3d: [%3d/%5d Kb] - %s", k, it->second->m_dwReference, it->second->mem_usage() / 1024, it->first.c_str());
+		Msg("#%3d: [%3d/%5d Kb] - %s", k, it->second->m_dwReference.load(), it->second->mem_usage() / 1024, it->first.c_str());
 	}
 	Msg("--- items: %d, mem usage: %d Kb ", container.size(), sz / 1024);
 	Log("--- motion container --- end.");
@@ -402,9 +408,7 @@ bool CMotionDef::StopAtEnd()
 
 bool shared_motions::create(shared_str key, IReader* data, vecBones* bones)
 {
-	motions_value* v = g_pMotionsContainer->dock(key, data, bones);
-	if (0 != v)
-		v->m_dwReference++;
+	motions_value* v = g_pMotionsContainer->dock(key, data, bones); // the reference is taken in dock
 	destroy();
 	p_ = v;
 	return (0 != v);

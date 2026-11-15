@@ -99,6 +99,7 @@ public:
 	void Prefetch();
 	void Prefetch_One(LPCSTR N, bool assert = true);
 	bool Exists(LPCSTR N);
+	bool Exists_kt(LPCSTR N); // kt (#467): in the pool or loaded, nothing read
 	void ClearPool(BOOL b_complete);
 
 	void dump();

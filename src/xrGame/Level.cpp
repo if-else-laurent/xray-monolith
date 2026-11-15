@@ -616,10 +616,9 @@ void CLevel::ProcessPrefetchEvents(void* args)
             {
                 bool not_prefetched = false;
 
-                {
-                    xrSRWLockGuard g(prefetch_lock, true);
-                    not_prefetched = prefetched_models->find(model) == prefetched_models->end();
-                }
+                // kt (#467, Anomaly): the model pool lets idle models go during a level, so a name prefetched
+                // once may be gone again; Prefetch_One itself returns at once when the model is still there
+                not_prefetched = true;
 
                 if (not_prefetched)
                 {
