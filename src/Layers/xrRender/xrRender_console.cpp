@@ -122,6 +122,7 @@ Flags32 ps_r__common_flags = {/*RFLAG_NO_RAM_TEXTURES*/ }; // All renders
 
 //int		ps_r__Supersample			= 1		;
 int ps_r__LightSleepFrames = 10;
+int ps_r__kt_model_idle = 600; // kt (#467): seconds an unused model stays in the pool; 0 - keep all (old)
 
 float ps_r__Detail_l_ambient = 0.9f;
 float ps_r__Detail_l_aniso = 0.25f;
@@ -1581,6 +1582,7 @@ void xrRender_initconsole()
 #ifdef DETAIL_RADIUS
 	CMD4(CCC_detail_radius, "r__detail_radius", &ps_r__detail_radius, 0, 250);
 	CMD3(CCC_Mask, "r__clear_models_on_unload", &psDeviceFlags2, rsClearModels); //Alundaio
+	CMD4(CCC_Integer, "r__kt_model_idle", &ps_r__kt_model_idle, 0, 7200); // kt (#467)
 	CMD3(CCC_Mask, "r__clear_resources_on_unload", &psDeviceFlags2, rsClearAllResources);
 	CMD3(CCC_Mask, "r__use_precompiled_shaders", &psDeviceFlags2, rsPrecompiledShaders); //Alundaio
 #if RENDER == R_R4

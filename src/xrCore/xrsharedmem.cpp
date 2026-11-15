@@ -51,6 +51,7 @@ smem_value* smem_container::dock(u32 dwCRC, u32 dwLength, void* ptr)
 		CopyMemory(result->value, ptr, dwLength);
 		container.insert(saved_place, result);
 	}
+	result->dwReference.fetch_add(1, std::memory_order_relaxed); // kt (#467): before clean() can see 0
 
 	// exit
 	cs.Leave();
@@ -65,6 +66,24 @@ void smem_container::clean()
 	for (; it != end; it++) if (0 == (*it)->dwReference.load(std::memory_order_relaxed)) xr_free(*it);
 	container.erase(remove(container.begin(), container.end(), (smem_value*)0), container.end());
 	if (container.empty()) container.clear();
+	cs.Leave();
+}
+
+void smem_container::kt_stats(u32& blocks, u64& bytes, u32& unused, u64& unused_bytes)
+{
+	blocks = unused = 0;
+	bytes = unused_bytes = 0;
+	cs.Enter();
+	for (cdb::iterator it = container.begin(); it != container.end(); ++it)
+	{
+		++blocks;
+		bytes += (*it)->dwLength;
+		if (0 == (*it)->dwReference.load(std::memory_order_relaxed))
+		{
+			++unused;
+			unused_bytes += (*it)->dwLength;
+		}
+	}
 	cs.Leave();
 }
 

@@ -53,6 +53,7 @@ public:
 	void clean();
 	void dump();
 	u32 stat_economy();
+	void kt_stats(u32& blocks, u64& bytes, u32& unused, u64& unused_bytes); // kt (#467)
 #ifdef PROFILE_CRITICAL_SECTIONS
     smem_container ():cs(MUTEX_PROFILE_ID(smem_container)) {}
 #endif // PROFILE_CRITICAL_SECTIONS
@@ -99,8 +100,8 @@ public:
 
 	void create(u32 dwCRC, u32 dwLength, T* ptr)
 	{
+		// kt (#467): dock takes the reference under its lock - clean() may run on another thread
 		smem_value* v = g_pSharedMemoryContainer->dock(dwCRC, dwLength * sizeof(T), ptr);
-		if (0 != v) v->dwReference.fetch_add(1, std::memory_order_relaxed);
 		_dec();
 		p_ = v;
 	}

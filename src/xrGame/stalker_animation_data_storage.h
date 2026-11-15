@@ -14,7 +14,10 @@ class IKinematicsAnimated;
 class CStalkerAnimationDataStorage
 {
 public:
-	typedef std::pair<IKinematicsAnimated*, CStalkerAnimationData*> OBJECT;
+	// kt (#467, Anomaly): keyed by the names of the skeleton's motion slots, not by the first skeleton
+	// instance - the model pool now frees idle instances during a level, and the old key was dereferenced
+	typedef xr_vector<shared_str> MOTIONS_KEY;
+	typedef std::pair<MOTIONS_KEY, CStalkerAnimationData*> OBJECT;
 	typedef xr_vector<OBJECT> OBJECTS;
 
 private:

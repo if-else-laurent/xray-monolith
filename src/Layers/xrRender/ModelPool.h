@@ -29,11 +29,13 @@ private:
 		shared_str name;
 		dxRender_Visual* model;
 		u32 refs;
+		u32 kt_zero_since; // kt (#467): Device.dwTimeContinual when refs fell to 0, 0 while in use
 
 		ModelDef()
 		{
 			refs = 0;
 			model = 0;
+			kt_zero_since = 0;
 		}
 
 		// Order by pointer
@@ -57,6 +59,18 @@ private:
 	BOOL bAllowChildrenDuplicate;
 	xrCriticalSection deffered_del_lock;
 	xrSRWLock ModelsLock;
+
+	// kt (#467, Anomaly): idle cleanup of the pool. Pool/Registry/Models and the motions container were
+	// touched by the prefetch thread (Prefetch_One) and the main thread without a common lock; kt_lock
+	// (recursive) now covers create, delete, discard, prefetch and the sweep.
+	xrCriticalSection kt_lock;
+	xr_map<dxRender_Visual*, u32> kt_pool_time; // pooled instance -> when it went into Pool
+	u32 kt_last_sweep;
+	u32 kt_swept_instances;
+	u32 kt_swept_bases;
+	void kt_pool_put(const shared_str& name, dxRender_Visual* V);
+	void kt_delete_base(xr_vector<ModelDef>::iterator I);
+	void kt_Sweep();
 
 	void Destroy();
 public:

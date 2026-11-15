@@ -3,6 +3,7 @@
 #include "../../xrEngine/IGame_Level.h"
 
 #include "ModelPool.h"
+#include "xrRender_console.h" // kt (#467): r__kt_model_idle
 
 #ifndef _EDITOR
 #include "../../xrEngine/IGame_Persistent.h"
@@ -95,6 +96,7 @@ dxRender_Visual* CModelPool::Instance_Duplicate(dxRender_Visual* V)
 		if (it != Models.end() && it->model == V)
 		{
 			it->refs++;
+			it->kt_zero_since = 0;
 		}
 		return N;
 	}
@@ -205,7 +207,9 @@ dxRender_Visual* CModelPool::Instance_Register(LPCSTR N, dxRender_Visual* V)
 void CModelPool::Destroy()
 {
 	// Pool
+	xrCriticalSectionGuard kt_guard(&kt_lock);
 	Pool.clear();
+	kt_pool_time.clear();
 
 	// Registry
 	while (!Registry.empty())
@@ -243,6 +247,9 @@ CModelPool::CModelPool()
 	bLogging = TRUE;
 	bForceDiscard = FALSE;
 	bAllowChildrenDuplicate = TRUE;
+	kt_last_sweep = 0;
+	kt_swept_instances = 0;
+	kt_swept_bases = 0;
 	g_pMotionsContainer = xr_new<motions_container>();
 }
 
@@ -279,6 +286,8 @@ dxRender_Visual* CModelPool::Create(const char* name, IReader* data, bool assert
 	xr_strcpy(low_name, name);
 	strlwr(low_name);
 	if (strext(low_name)) *strext(low_name) = 0;
+
+	xrCriticalSectionGuard kt_guard(&kt_lock); // kt (#467): the prefetch thread creates too
 	
 	// 0. Search POOL
 	POOL_IT it = Pool.find(low_name);
@@ -288,6 +297,7 @@ dxRender_Visual* CModelPool::Create(const char* name, IReader* data, bool assert
 		dxRender_Visual* Model = it->second;
 		Model->Spawn();
 		Pool.erase(it);
+		kt_pool_time.erase(Model);
 		return Model;
 	}
 	else
@@ -326,6 +336,8 @@ dxRender_Visual* CModelPool::CreateChild(LPCSTR name, IReader* data)
 	strlwr(low_name);
 	if (strext(low_name)) *strext(low_name) = 0;
 
+	xrCriticalSectionGuard kt_guard(&kt_lock);
+
 	// 1. Search for already loaded model
 	dxRender_Visual* Base = Instance_Find(low_name);
 	//.	if (0==Base) Base	 	= Instance_Load(name,data,FALSE);
@@ -345,6 +357,7 @@ void CModelPool::DeleteInternal(dxRender_Visual* & V, BOOL bDiscard)
 {
 	VERIFY(!g_bRendering);
 	if (!V) return;
+	xrCriticalSectionGuard kt_guard(&kt_lock);
 	V->Depart();
 	if (bDiscard || bForceDiscard)
 	{
@@ -364,7 +377,7 @@ void CModelPool::DeleteInternal(dxRender_Visual* & V, BOOL bDiscard)
 			else
 				V->ResetShaderTexture();
 
-			Pool.insert(mk_pair(it->second, V));
+			kt_pool_put(it->second, V);
 		}
 		else
 		{
@@ -408,6 +421,8 @@ void CModelPool::DeleteQueue()
 	for (u32 it = 0; it < ModelsToDelete.size(); it++)
 		DeleteInternal(ModelsToDelete[it]);
 	ModelsToDelete.clear();
+
+	kt_Sweep(); // kt (#467): called each frame by every renderer's OnFrame, outside rendering
 }
 
 void CModelPool::DeleteQueuedDeffer()
@@ -425,6 +440,8 @@ void CModelPool::DeleteQueuedDeffer()
 
 void CModelPool::Discard(dxRender_Visual* & V, BOOL b_complete)
 {
+	xrCriticalSectionGuard kt_guard(&kt_lock);
+	kt_pool_time.erase(V);
 	//
 	REGISTRY_IT it = Registry.find(V);
 	if (it != Registry.end())
@@ -456,6 +473,8 @@ void CModelPool::Discard(dxRender_Visual* & V, BOOL b_complete)
 				{
 					if (I->refs > 0)
 						I->refs--;
+					if (0 == I->refs)
+						I->kt_zero_since = Device.dwTimeContinual; // kt (#467): kept for reuse, swept when idle
 					break;
 				}
 			}
@@ -490,6 +509,7 @@ void CModelPool::Prefetch()
 
 void CModelPool::Prefetch_One(LPCSTR N, bool assert)
 {
+	xrCriticalSectionGuard kt_guard(&kt_lock); // kt (#467): runs on the prefetch thread
 	dxRender_Visual* V = Create(N, 0, assert);
 	if (V)
 		Delete(V,FALSE);
@@ -502,6 +522,8 @@ bool CModelPool::Exists(LPCSTR N)
 	xr_strcpy(low_name, N);
 	strlwr(low_name);
 	if (strext(low_name)) *strext(low_name) = 0;
+
+	xrCriticalSectionGuard kt_guard(&kt_lock);
 
 	// Search pool and return early if exists
 	POOL_IT it = Pool.find(low_name);
@@ -540,6 +562,7 @@ dxRender_Visual* CModelPool::CreatePG(PS::CPGDef* source)
 
 void CModelPool::ClearPool(BOOL b_complete)
 {
+	xrCriticalSectionGuard kt_guard(&kt_lock);
 	POOL_IT _I = Pool.begin();
 	POOL_IT _E = Pool.end();
 	for (; _I != _E; _I++)
@@ -547,10 +570,126 @@ void CModelPool::ClearPool(BOOL b_complete)
 		Discard(_I->second, b_complete);
 	}
 	Pool.clear();
+	kt_pool_time.clear();
+}
+
+// kt (#467, Anomaly): the pool used to keep every model ever created. An instance given back went into
+// Pool for reuse and stayed there until a level change; its base model (vertices, bones, motions - the
+// motions and skinned vertices in g_pSharedMemoryContainer) stayed for the whole session even after the
+// level change (ClearPool(FALSE) only drops the count), and the shared blocks themselves were never freed
+// in a release build (Memory.mem_compact cleans them only under DEBUG_MEMORY_MANAGER). On one level and
+// in the seamless world this grows with every new kind of item, body and monster met (night soak:
+// bases 304 -> 582, pooled instances 669 -> 1312 in 4 h).
+// The sweep: every 2 s, outside rendering, under kt_lock: of the pooled instances of one name the extra
+// ones idle for idle/4 go, the last one after idle; a base without instances for idle goes; then the
+// unreferenced motions and shared blocks are freed. A model needed again is loaded again (as after a
+// level change). r__kt_model_idle 0 turns it off.
+void CModelPool::kt_pool_put(const shared_str& name, dxRender_Visual* V)
+{
+	Pool.insert(mk_pair(name, V));
+	kt_pool_time[V] = Device.dwTimeContinual;
+}
+
+void CModelPool::kt_delete_base(xr_vector<ModelDef>::iterator I)
+{
+	// the same as the b_complete branch of Discard, ModelsLock taken by the caller
+	bForceDiscard = TRUE;
+	I->model->Release();
+	xr_delete(I->model);
+	Models.erase(I);
+	bForceDiscard = FALSE;
+}
+
+void CModelPool::kt_Sweep()
+{
+	if (ps_r__kt_model_idle <= 0)
+		return;
+	const u32 now = Device.dwTimeContinual;
+	if (now - kt_last_sweep < 2000)
+		return;
+	kt_last_sweep = now;
+
+	xrCriticalSectionGuard kt_guard(&kt_lock);
+	const u32 idle_last = u32(ps_r__kt_model_idle) * 1000;
+	const u32 idle_extra = idle_last / 4;
+	u32 budget = 32; // a frame does not pay for more
+	bool freed = false;
+
+	// 1. pooled instances
+	for (POOL_IT it = Pool.begin(); it != Pool.end() && budget;)
+	{
+		POOL_IT group_end = Pool.upper_bound(it->first);
+		auto idle_of = [&](dxRender_Visual* V) -> u32
+		{
+			auto t = kt_pool_time.find(V);
+			return (t != kt_pool_time.end()) ? now - t->second : 0;
+		};
+		u32 least_idle = u32(-1);
+		for (POOL_IT j = it; j != group_end; ++j)
+			least_idle = _min(least_idle, idle_of(j->second));
+		bool kept_newest = false;
+		for (POOL_IT j = it; j != group_end && budget;)
+		{
+			u32 idle = idle_of(j->second);
+			bool is_newest = !kept_newest && idle == least_idle;
+			if (is_newest)
+				kept_newest = true;
+			if (idle >= (is_newest ? idle_last : idle_extra))
+			{
+				dxRender_Visual* V = j->second;
+				j = Pool.erase(j);
+				Discard(V, TRUE); // drops the base too when this was its last instance
+				++kt_swept_instances;
+				--budget;
+				freed = true;
+			}
+			else
+				++j;
+		}
+		it = group_end;
+	}
+
+	// 2. bases left without instances (ClearPool(FALSE) on a level change keeps them)
+	{
+		xrSRWLockGuard g(ModelsLock);
+		for (u32 i = 0; i < Models.size() && budget;)
+		{
+			auto I = Models.begin() + i;
+			if (0 != I->refs)
+			{
+				I->kt_zero_since = 0;
+				++i;
+				continue;
+			}
+			if (0 == I->kt_zero_since)
+			{
+				I->kt_zero_since = now ? now : 1;
+				++i;
+				continue;
+			}
+			if (now - I->kt_zero_since < idle_last)
+			{
+				++i;
+				continue;
+			}
+			kt_delete_base(I);
+			++kt_swept_bases;
+			--budget;
+			freed = true;
+		}
+	}
+
+	// 3. what nobody references any more
+	if (freed)
+	{
+		g_pMotionsContainer->clean(false);
+		g_pSharedMemoryContainer->clean();
+	}
 }
 
 void CModelPool::dump()
 {
+	xrCriticalSectionGuard kt_guard(&kt_lock);
 	Log("--- model pool --- begin:");
 	u32 sz = 0;
 	u32 k = 0;
@@ -583,6 +722,25 @@ void CModelPool::dump()
 		}
 	}
 	Msg("--- instances: %d, free %d, mem usage: %d Kb ", k, free_cnt, sz / 1024);
+	{
+		// kt (#467): what the pool really holds - base models of every kind (the list above shows only
+		// skeletons), the pooled (unused) instances, bases without any instance, and what the sweep let go
+		u32 bases = 0, bases_idle = 0;
+		for (auto& M : Models)
+		{
+			++bases;
+			if (0 == M.refs) ++bases_idle;
+		}
+		u32 m_items = 0, m_unused = 0, m_kb = 0, m_unused_kb = 0;
+		g_pMotionsContainer->kt_stats(m_items, m_unused, m_kb, m_unused_kb);
+		u32 s_blocks = 0, s_unused = 0;
+		u64 s_bytes = 0, s_unused_bytes = 0;
+		g_pSharedMemoryContainer->kt_stats(s_blocks, s_bytes, s_unused, s_unused_bytes);
+		Msg("--- kt pool: bases %u (no instance %u), pooled %u, swept instances %u, swept bases %u, idle %d s",
+			bases, bases_idle, (u32)Pool.size(), kt_swept_instances, kt_swept_bases, ps_r__kt_model_idle);
+		Msg("--- kt pool: motions %u (%u Kb), unreferenced %u (%u Kb); smem blocks %u (%u Kb), unreferenced %u (%u Kb)",
+			m_items, m_kb, m_unused, m_unused_kb, s_blocks, u32(s_bytes / 1024), s_unused, u32(s_unused_bytes / 1024));
+	}
 	Log("--- model pool --- end.");
 }
 

@@ -70,6 +70,7 @@ extern ECORE_API xr_token qminmax_sm_token[];
 
 extern ENGINE_API int ps_r__Supersample;
 extern ECORE_API int ps_r__LightSleepFrames;
+extern ECORE_API int ps_r__kt_model_idle; // kt (#467)
 
 extern ECORE_API float ps_r__Detail_l_ambient;
 extern ECORE_API float ps_r__Detail_l_aniso;

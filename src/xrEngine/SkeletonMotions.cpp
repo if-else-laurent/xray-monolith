@@ -334,6 +334,25 @@ void motions_container::clean(bool force_destroy)
 	}
 }
 
+void motions_container::kt_stats(u32& items, u32& unused, u32& kb, u32& unused_kb)
+{
+	u64 sz = 0, unused_sz = 0;
+	items = unused = 0;
+	for (SharedMotionsMapIt it = container.begin(); it != container.end(); ++it)
+	{
+		u32 cur = it->second->mem_usage();
+		++items;
+		sz += cur;
+		if (0 == it->second->m_dwReference)
+		{
+			++unused;
+			unused_sz += cur;
+		}
+	}
+	kb = u32(sz / 1024);
+	unused_kb = u32(unused_sz / 1024);
+}
+
 void motions_container::dump()
 {
 	SharedMotionsMapIt it = container.begin();

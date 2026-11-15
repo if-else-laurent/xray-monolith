@@ -254,6 +254,7 @@ public:
 	motions_value* dock(shared_str key, IReader* data, vecBones* bones);
 	void dump();
 	void clean(bool force_destroy);
+	void kt_stats(u32& items, u32& unused, u32& kb, u32& unused_kb); // kt (#467)
 };
 
 extern ENGINE_API motions_container* g_pMotionsContainer;
@@ -296,6 +297,9 @@ public:
 	}
 
 	bool operator==(shared_motions const& rhs) const { return (p_ == rhs.p_); }
+
+	// kt (#467): the motions' name (the container's key) - a key that outlives the motions themselves
+	shared_str id() const { return p_ ? p_->m_id : shared_str(); }
 
 	// misc func
 	MotionVec* bone_motions(const shared_str& bone_name)
