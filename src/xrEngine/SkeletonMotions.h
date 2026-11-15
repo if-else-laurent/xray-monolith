@@ -298,9 +298,6 @@ public:
 
 	bool operator==(shared_motions const& rhs) const { return (p_ == rhs.p_); }
 
-	// kt (#467): the motions' name (the container's key) - a key that outlives the motions themselves
-	shared_str id() const { return p_ ? p_->m_id : shared_str(); }
-
 	// misc func
 	MotionVec* bone_motions(const shared_str& bone_name)
 	{
