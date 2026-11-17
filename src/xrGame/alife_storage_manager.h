@@ -35,6 +35,9 @@ public:
 	// seamless world experiment (kt): the objects of the levels standing next to the base one live in
 	// the world's coordinates and node numbers, and are written to a save in their own level's
 	void kt_move_objects(bool to_world);
+	// kt (#514): an object of a save whose vertex this run's graph has not (one added by
+	// -kt_graph_vertex of another build) is put on the nearest vertex of the world's base level
+	void kt_lost_vertices(LPCSTR file_name);
 };
 
 #include "alife_storage_manager_inline.h"

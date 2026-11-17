@@ -16,6 +16,7 @@
 #include "alife_simulator_header.h"
 #include "alife_simulator.h"
 #include "alife_spawn_registry.h"
+#include "../xrEngine/IGame_Level.h"
 
 extern LPCSTR alife_section;
 
@@ -159,9 +160,55 @@ CSavedGameWrapper::CSavedGameWrapper(LPCSTR saved_game_name)
 		}
 
 		{
+			// kt (#514, Anomaly/Monolith): the graph here is the file's, as it is before kt_claim; the
+			// vertices the world adds (-kt_graph_vertex, numbered after the file's) are not in it, and a
+			// save of an actor standing at one read past the vertices: a level id of garbage, an assert in
+			// the load dialog (level 67). Such a vertex gets its like's level, if this run adds it, else the
+			// world's base level; otherwise, and for any level the header does not know, the save is
+			// listed without a level, as one whose spawn is missing.
 			CGameGraph graph(*chunk);
-			m_level_id = graph.vertex(object->m_tGraphID)->level_id();
-			m_level_name = graph.header().level(m_level_id).name();
+			const u32 vertex = object->m_tGraphID;
+			u32 level = u32(-1);
+			if (graph.valid_vertex_id(vertex))
+				level = graph.vertex(vertex)->level_id();
+			else
+			{
+				LPCSTR how = "no level";
+				if (kt_chunk_keys())
+				{
+					for (u32 n = 0; n < g_kt_chunk.graph_vertices.size(); n++)
+						if (g_kt_chunk.graph_vertices[n].vertex == vertex && graph.valid_vertex_id(g_kt_chunk.graph_vertices[n].like))
+						{
+							level = graph.vertex(g_kt_chunk.graph_vertices[n].like)->level_id();
+							how = "its like's level";
+							break;
+						}
+					if (level == u32(-1) && g_kt_chunk.base[0])
+					{
+						GameGraph::LEVEL_MAP::const_iterator I = graph.header().levels().begin(), E = graph.header().levels().end();
+						for (; I != E; ++I)
+							if (0 == stricmp(*(*I).second.name(), g_kt_chunk.base))
+							{
+								level = u32((*I).first);
+								how = "the world's base level";
+								break;
+							}
+					}
+				}
+				Msg("! [kt world] save %s: the actor's vertex %u is not in the file's graph of %u vertices, listed with %s",
+				    saved_game_name, vertex, u32(graph.header().vertex_count()), how);
+			}
+			GameGraph::LEVEL_MAP::const_iterator L = graph.header().levels().find(GameGraph::_LEVEL_ID(level));
+			if (level < 256 && L != graph.header().levels().end())
+			{
+				m_level_id = GameGraph::_LEVEL_ID(level);
+				m_level_name = (*L).second.name();
+			}
+			else
+			{
+				m_level_id = _LEVEL_ID(-1);
+				m_level_name = "";
+			}
 		}
 
 		chunk->close();

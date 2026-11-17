@@ -29,6 +29,7 @@
 #include "../xrEngine/IGame_Level.h"
 #include "xrServer_Objects_ALife.h"
 #include "xrServer_Objects_ALife_Items.h"
+#include "xrServer_Objects_ALife_Monsters.h"
 //Alundaio
 #ifdef ENGINE_LUA_ALIFE_STORAGE_MANAGER_CALLBACKS
 #include "pch_script.h"
@@ -148,6 +149,7 @@ void CALifeStorageManager::load(void* buffer, const u32& buffer_size, LPCSTR fil
 	spawns().load(source, file_name);
 	graph().on_load();
 	objects().load(source);
+	kt_lost_vertices(file_name);
 
 	VERIFY(can_register_objects());
 	can_register_objects(false);
@@ -211,6 +213,78 @@ static void kt_move_state(CSE_ALifeDynamicObject* object, const Fvector& shift, 
 		if (to_world && state->position.distance_to_sqr(object->o_Position) > far_sqr)
 			state->position = state->previous_position = object->o_Position;
 	}
+}
+
+// kt (#514, Anomaly/Monolith). The world adds vertices to the graph (-kt_graph_vertex, the stops on the
+// seams' long paths), numbered after the file's; a save keeps the vertex an object stood at. Loaded by a
+// build that adds fewer, the number is past the graph: the registries index their vectors by it. Such a
+// vertex can only be an added one, whose point is the world's, on its base level; the object's place is
+// in the same coordinates (an added vertex has no chunk, the save does not move it). So it is put on the
+// nearest vertex that stands in those coordinates too: one of the file on the base level, or one added
+// by this run. Its place, node and everything else stay as saved. Without the world there is no such
+// level to put it on: the load is refused in words, not by an assert somewhere in the registries.
+void CALifeStorageManager::kt_lost_vertices(LPCSTR file_name)
+{
+	if (!ai().get_game_graph()) return;
+	const CGameGraph& graph = ai().game_graph();
+	const u32 count = graph.header().vertex_count();
+	int base = -1;
+	if (kt_chunk_keys() && g_kt_chunk.base[0])
+	{
+		GameGraph::LEVEL_MAP::const_iterator I = graph.header().levels().begin(), E = graph.header().levels().end();
+		for (; I != E; ++I)
+			if (0 == stricmp(*(*I).second.name(), g_kt_chunk.base))
+			{
+				base = int((*I).first);
+				break;
+			}
+	}
+	const u32 file_count = base >= 0 ? graph.kt_file_vertex_count() : count;
+	u32 lost = 0, ways = 0;
+	CALifeObjectRegistry::OBJECT_REGISTRY::iterator I = objects().objects().begin();
+	CALifeObjectRegistry::OBJECT_REGISTRY::iterator E = objects().objects().end();
+	for (; I != E; ++I)
+	{
+		CSE_ALifeDynamicObject* object = (*I).second;
+		const u32 none = GameGraph::_GRAPH_ID(-1); // no vertex: as it was
+		if (object->m_tGraphID >= count && object->m_tGraphID != none)
+		{
+			CHECK_OR_EXIT(base >= 0,
+			              make_string("%s\nThe save was written in the seamless world: object %s stands at vertex %u of its graph, and this one has %u vertices.\nLoad it with the world on.",
+				              file_name, object->name_replace(), u32(object->m_tGraphID), count));
+			u32 best = u32(-1);
+			float best_sqr = flt_max;
+			for (u32 v = 0; v < count; v++)
+			{
+				if (v < file_count && graph.kt_level(v) != u32(base)) continue;
+				const float d = graph.vertex(v)->level_point().distance_to_sqr(object->o_Position);
+				if (d < best_sqr)
+				{
+					best_sqr = d;
+					best = v;
+				}
+			}
+			if (best == u32(-1)) continue; // a base level without vertices: no graph to speak of
+			if (lost < 20)
+				Msg("! [kt world] save: %s [%u] at vertex %u, past the graph of %u vertices: put on vertex %u, %.1f m away (%.1f, %.1f, %.1f)",
+				    object->name_replace(), u32(object->ID), u32(object->m_tGraphID), count, best, _sqrt(best_sqr), VPUSH(object->o_Position));
+			object->m_tGraphID = GameGraph::_GRAPH_ID(best);
+			lost++;
+		}
+		// the vertices an offline walker goes from and to
+		CMovementManagerHolder* walker = smart_cast<CSE_ALifeMonsterAbstract*>(object);
+		if (!walker) walker = smart_cast<CSE_ALifeOnlineOfflineGroup*>(object);
+		if (walker && ((walker->m_tNextGraphID >= count && walker->m_tNextGraphID != none) ||
+		               (walker->m_tPrevGraphID >= count && walker->m_tPrevGraphID != none)))
+		{
+			if (walker->m_tNextGraphID >= count && walker->m_tNextGraphID != none) walker->m_tNextGraphID = object->m_tGraphID;
+			if (walker->m_tPrevGraphID >= count && walker->m_tPrevGraphID != none) walker->m_tPrevGraphID = object->m_tGraphID;
+			ways++;
+		}
+	}
+	if (lost || ways)
+		Msg("! [kt world] save %s: %u objects stood at vertices past the graph of %u, put on the nearest of %s; %u walkers' ways cut there",
+		    file_name, lost, count, base >= 0 ? *graph.header().level(GameGraph::_LEVEL_ID(base)).name() : "-", ways);
 }
 
 void CALifeStorageManager::kt_move_objects(bool to_world)
