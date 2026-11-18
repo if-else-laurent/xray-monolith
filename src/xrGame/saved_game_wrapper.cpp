@@ -195,8 +195,9 @@ CSavedGameWrapper::CSavedGameWrapper(LPCSTR saved_game_name)
 							}
 					}
 				}
-				Msg("! [kt world] save %s: the actor's vertex %u is not in the file's graph of %u vertices, listed with %s",
-				    saved_game_name, vertex, u32(graph.header().vertex_count()), how);
+				// a stop this run adds is the usual case (its like's level, "*"); a vertex it does not add is "!"
+				Msg("%c [kt world] save %s: the actor's vertex %u is not in the file's graph of %u vertices, listed with %s",
+				    how[0] == 'i' ? '*' : '!', saved_game_name, vertex, u32(graph.header().vertex_count()), how);
 			}
 			GameGraph::LEVEL_MAP::const_iterator L = graph.header().levels().find(GameGraph::_LEVEL_ID(level));
 			if (level < 256 && L != graph.header().levels().end())
