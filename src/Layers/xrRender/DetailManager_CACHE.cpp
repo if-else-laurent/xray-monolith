@@ -237,10 +237,27 @@ void CDetailManager::cache_Update(int v_x, int v_z, Fvector& view, int limit)
 // kt: the base of the models' numbers for the slot QueryDB gave last on this thread (0: the level's own)
 static thread_local u32 kt_query_base = 0;
 static thread_local int kt_query_piece = -1;
+// kt: the slot QueryDB gave last on this thread takes its range of heights from the ground laid anew
+static thread_local bool kt_query_land = false;
 
 int CDetailManager::kt_slot_piece()
 {
 	return kt_query_piece;
+}
+
+// kt: may grass be seated on this triangle of the slot QueryDB gave last. Where the slot's range of
+// heights is the new ground's (-1..+2 m around it), not the level's own narrow one, the trunk of a
+// level's tree inside that range was a seat: grass hung on trunks up to 2.7 m at Marsh's seam
+// (#502). There only ground (-kt_ground) and the pieces of our own carry grass.
+bool CDetailManager::kt_seat(u32 tri, u32 material)
+{
+	if (!kt_query_land || g_kt_chunk.ground_materials.empty() || g_kt_chunk.ground(material)) return true;
+	for (u32 p = 0; p < g_kt_chunk.pieces.size(); p++)
+	{
+		const KtPiece& P = g_kt_chunk.pieces[p];
+		if (tri >= P.tri_base && tri < P.tri_base + P.tri_count) return 0 == strncmp(P.name, "kt_", 3);
+	}
+	return false;
 }
 
 bool CDetailManager::kt_other_level(int piece, u32 tri) const
@@ -288,6 +305,7 @@ DetailSlot& CDetailManager::QueryDB(int sx, int sz)
 {
 	kt_query_base = 0;
 	kt_query_piece = -1;
+	kt_query_land = false;
 	// Seamless world experiment (kt): on an extra level's land its own grass is shown. The slot is
 	// taken from its file at the place this world slot covers there, its models renumbered and its
 	// height moved with the level. The grids of slots do not coincide, so the grass lies up to a
@@ -310,7 +328,7 @@ DetailSlot& CDetailManager::QueryDB(int sx, int sz)
 			for (u32 i = 0; i < kt_grass.size(); i++)
 				if (kt_grass[i].piece + 1 == owner && g_kt_chunk.pieces[kt_grass[i].piece].loaded && kt_slot(kt_grass[i], wx, wz, DS))
 				{
-					if (land != flt_max) DS.w_y(land - 1.f, 3.f);
+					if (land != flt_max) { DS.w_y(land - 1.f, 3.f); kt_query_land = true; }
 					return DS;
 				}
 			DS.w_id(0, DetailSlot::ID_Empty);
@@ -327,6 +345,7 @@ DetailSlot& CDetailManager::QueryDB(int sx, int sz)
 			// the level's own grass over ground of ours
 			DS = dtSlots[own_z * dtH.size_x + own_x];
 			DS.w_y(land - 1.f, 3.f);
+			kt_query_land = true;
 			return DS;
 		}
 		bool bare = !((own_x >= 0) && (own_x < int(dtH.size_x)) && (own_z >= 0) && (own_z < int(dtH.size_z)));

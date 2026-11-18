@@ -192,6 +192,7 @@ public:
 	// the attached level whose grass the slot QueryDB gave last on this thread is: its piece, or -1
 	// for the level's own grass
 	static int kt_slot_piece();
+	static bool kt_seat(u32 tri, u32 material);
 	// a triangle of the static model that is another level's ground than the grass of `piece`
 	bool kt_other_level(int piece, u32 tri) const;
 	DetailSlot DS_empty;

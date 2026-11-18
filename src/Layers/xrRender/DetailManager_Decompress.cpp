@@ -235,6 +235,10 @@ RDEVICE.Statistic->TEST0.End		();
 				// (2026-10-20); the level's own grass is not looked at here
 				if (kt_other_level(kt_piece, xrc.r_begin()[tid].id))
 					continue;
+				// seamless world experiment (kt): over ground laid anew grass sits on ground, not on a
+				// tree's trunk inside the slot's wide range of heights (#502)
+				if (!kt_seat(xrc.r_begin()[tid].id, T.material))
+					continue;
 
 				//Detect sector
 				if (RImplementation.pOutdoorSector)

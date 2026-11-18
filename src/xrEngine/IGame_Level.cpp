@@ -483,7 +483,12 @@ static bool kt_cform_cut(u32 piece, u32 material, const Fvector& a, const Fvecto
 	// ground: by material, and only what lies flat enough to be walked on
 	Fvector n;
 	n.mknormal(a, b, c);
-	const bool is_ground = _abs(n.y) > .5f && g_kt_chunk.ground(material);
+	const bool ground_material = g_kt_chunk.ground(material);
+	const bool is_ground = _abs(n.y) > .5f && ground_material;
+	// a cell whose ground is laid anew loses all of the level's ground in the picture (its terrain
+	// shader, any slope); the collisions lose the same. The steep triangles left there stood
+	// invisible and solid up to 2.8 m over the new ground at Garbage's fold of hills (#466)
+	if (ground_material && !is_ground && g_kt_chunk.blended(piece, (a.x + b.x + c.x) / 3, (a.z + b.z + c.z) / 3)) return true;
 	return g_kt_chunk.cut(piece, a, b, c, strict, is_ground);
 }
 
